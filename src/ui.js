@@ -459,7 +459,6 @@ let tt; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add
 // are downloaded with standard browser APIs. Shared backend/admin services can
 // be connected later without changing the BoM engine.
 $('#adminlink').hidden=true;
-route();
-renderResults();
 $('#logo-d').src=LOGO_DARK; $('#logo-l').src=LOGO_LIGHT;
+route();
 document.body.dataset.view=view; catInfo(); run();
