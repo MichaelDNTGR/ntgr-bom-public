@@ -1,0 +1,465 @@
+// ===== UI v2: customer mode + team mode =====
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=(v,d=0)=>(v===null||v===undefined||v===''||isNaN(v))?'–':(+v).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d});
+const BUILTIN=JSON.parse(document.getElementById('catalog').textContent);
+let CAT=BUILTIN, CATMETA={version:ENG.settings(BUILTIN).Catalog_Version,source:'Built-in catalog',publishedAt:null};
+const SET=()=>ENG.settings(CAT);
+const nid=()=>'L'+Math.random().toString(36).slice(2,8);
+const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:0,family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'},
+  endpoints:CAT.Endpoints.map(e=>({...e})),
+  locations:[{id:nid(),name:'Main equipment room',type:'MDF',distance:3,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-TX',qty:16},{ep:'EP-10G-TX',qty:4},{ep:'EP-DANTE',qty:8}]},
+    {id:nid(),name:'Closet 1',type:'IDF',distance:150,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:24},{ep:'EP-PTZ',qty:4},{ep:'EP-WBE758',qty:4}]},
+    {id:nid(),name:'Closet 2',type:'IDF',distance:600,media:'SMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:12},{ep:'EP-10G-FX',qty:4},{ep:'EP-PANEL',qty:6}]}]}; };
+let state; try{ state=JSON.parse(localStorage.getItem('ntgr-bom-v2')||'null'); }catch(e){ state=null; }
+if(!state||!state.project||!state.locations) state=DEFAULT();
+state.project={...DEFAULT().project,...state.project};
+let result=null, tab='diagram', view='customer', canTeam=false, advOpen=false, libOpen=false;
+// Optional shared-backend hooks. They remain null in the standalone browser build.
+let DB=null, UID=null, REQS=[], staged=null;
+const save=()=>{ try{ localStorage.setItem('ntgr-bom-v2',JSON.stringify(state)); }catch(e){} };
+const team=()=>canTeam; // editors see advanced controls inline; admin tools live on the admin page
+
+function swOpts(sel){ return `<option value="Auto"${sel==='Auto'?' selected':''}>Automatic</option>`+CAT.Products.filter(p=>p.Category==='Switch').map(p=>`<option value="${esc(p.Product_ID)}"${sel===p.Product_ID?' selected':''}>${esc(p.Model_Name)}</option>`).join(''); }
+function epOpts(sel){ const groups={}; state.endpoints.forEach(e=>(groups[e.Category||'Other']=groups[e.Category||'Other']||[]).push(e));
+  return Object.entries(groups).map(([g,es])=>`<optgroup label="${esc(g)}">${es.map(e=>`<option value="${esc(e.Endpoint_ID)}"${e.Endpoint_ID===sel?' selected':''}>${esc(e.Name)}</option>`).join('')}</optgroup>`).join(''); }
+
+function renderInputs(){
+  const P=state.project;
+  const sel=(k,opts)=>`<select data-p="${k}">${opts.map(([v,l])=>`<option value="${v}"${String(P[k])===String(v)?' selected':''}>${l}</option>`).join('')}</select>`;
+  const tog=(k,l,h)=>`<label class="tog"><input type="checkbox" data-p="${k}"${P[k]?' checked':''}><span class="sw"></span><span><b>${l}</b>${h?`<small>${h}</small>`:''}</span></label>`;
+  const num=(k,l,u,min,max)=>`<label class="fld"><span>${l}</span><span class="nu"><input type="number" data-p="${k}" value="${esc(P[k])}" min="${min}" max="${max}"><i>${u}</i></span></label>`;
+  $('#project').innerHTML=`
+    <label class="fld wide"><span>Project name</span><input type="text" data-p="name" value="${esc(P.name)}" placeholder="e.g. Riverside campus AV upgrade"></label>
+    <div class="grid2">
+      <label class="fld"><span>Country / region</span>${sel('region',[['Americas','Americas'],['Europe','Europe'],['APAC','Asia Pacific'],['China','China']])}</label>
+      <label class="fld"><span>Mains power</span>${sel('voltage',[[110,'110–120 V'],[220,'220–240 V']])}</label>
+    </div>
+    <div class="togs">
+      ${tog('psuRed','Redundant power supplies','Keeps PoE running if a PSU fails')}
+      ${tog('dualCore','Redundant core network','Two core switches, dual uplinks')}
+      ${tog('taa','TAA-compliant products','For US federal and government projects')}
+      ${tog('gateway','Include internet gateway','NETGEAR PR460X Pro Router')}
+    </div>
+    ${P.psuRed?`<fieldset class="seg"><legend>Redundant power applies to</legend>
+      ${[['all','All switches'],['mdf','Main equipment room only']].map(([v,l])=>`<label><input type="radio" name="psuScope" data-p="psuScope" value="${v}"${(P.psuScope||'all')===v?' checked':''}><span>${l}</span></label>`).join('')}
+    </fieldset>${P.psuScope==='mdf'?'<p class="hint">Core and main equipment room switches get redundant power supplies. Closet switches use a single power supply.</p>':''}`:''}
+    <fieldset class="seg"><legend>Switch series</legend>
+      ${[['Auto','Best fit'],['M4250','M4250 only'],['M4350','M4350 only']].map(([v,l])=>`<label><input type="radio" name="family" data-p="family" value="${v}"${P.family===v?' checked':''}><span>${l}</span></label>`).join('')}
+    </fieldset>
+    ${P.family==='M4250'?`<p class="hint">M4250 has 1G PoE access ports, SFP+ uplinks and no 2.5G/10G PoE ports.${P.psuRed?' With redundant power on, only the M4250 PoE++ models (multiple PSUs) qualify.':''}${P.taa?' No M4250 model has a TAA SKU.':''}</p>`:''}`;
+  $('#adv').innerHTML=advOpen?`<div class="grid2">
+      <label class="fld"><span>Design basis</span>${sel('basis',[['line','Line-rate (full link speed)'],['stream','Actual stream bandwidth']])}</label>
+      <label class="fld"><span>Uplink oversubscription</span>${sel('oversub',[[1,'1:1 non-blocking'],[2,'2:1'],[3,'3:1'],[4,'4:1']])}</label>
+      ${num('spare','Spare ports','%',0,100)}${num('poeHead','PoE headroom','%',0,100)}
+      ${num('mdfPatch','Patch length in main room','m',1,20)}
+      <label class="fld"><span>Core-to-core link sizing</span>${sel('islRule',[['failover','Busiest switch (failover)'],['half','Half of all traffic'],['full','All traffic (non-blocking)']])}</label>
+      <label class="fld"><span>OnCall 24x7 support</span>${sel('support',[[0,'Not included'],[1,'1 year'],[3,'3 years'],[5,'5 years']])}</label>
+      ${team()?`<label class="fld"><span>Core model</span><select data-p="coreOverride">${swOpts(P.coreOverride||'Auto')}</select></label>
+      <label class="fld"><span>Separate dual uplinks</span>${sel('dualUplink',[['true','Always 2+ uplinks'],['false','Single uplink allowed']])}</label>`:''}
+    </div>`:'';
+  $('#advbtn').setAttribute('aria-expanded',advOpen);
+  $('#locs').innerHTML=state.locations.map((L,li)=>{
+    const nodes=result?result.accessNodes.filter(a=>a.loc===L.name):[], err=result?result.errors.find(e=>e.loc===L.name):null;
+    const total=L.eps.reduce((s,e)=>s+(+e.qty||0),0);
+    return `<section class="loc${L.type==='MDF'?' mdf':''}" data-l="${li}">
+      <header><input class="lname" data-lf="name" value="${esc(L.name)}" aria-label="Room name">
+        <span class="kind">${L.type==='MDF'?'MDF':'IDF'}</span>
+        ${L.type==='IDF'?`<button class="ghost x" data-act="dell" aria-label="Remove ${esc(L.name)}">×</button>`:''}</header>
+      ${L.type==='IDF'?`<div class="grid2 tight"><label class="fld"><span>Fiber run to main room</span><span class="nu"><input type="number" data-lf="distance" value="${esc(L.distance)}" min="1"><i>m</i></span></label>
+        <label class="fld"><span>Fiber type</span><select data-lf="media"><option value="MMF"${L.media==='MMF'?' selected':''}>Multimode (OM3/OM4)</option><option value="SMF"${L.media==='SMF'?' selected':''}>Single mode</option></select></label></div>`:''}
+      <div class="eph"><span>Device</span><span>Qty</span></div>
+      <div class="eps">${L.eps.map((e,ei)=>`<div class="ep" data-e="${ei}"><select data-ef="ep" aria-label="Device type">${epOpts(e.ep)}</select>
+        <input type="number" min="0" data-ef="qty" value="${esc(e.qty)}" aria-label="Quantity"><button class="ghost x" data-act="dele" aria-label="Remove device">×</button></div>`).join('')}</div>
+      <div class="lfoot"><button class="ghost add" data-act="adde">Add device</button><span class="mut">${fmt(total)} devices</span></div>
+      ${team()?`<label class="fld wide"><span>Access switch</span><select data-lf="override">${swOpts(L.override||'Auto')}</select></label>`:''}
+      ${err?`<p class="err">${esc(err.msg)}</p>`:''}
+      ${nodes.length?`<div class="pick">${nodes.map(n=>`<p><b>${n.n} × ${esc(n.model)}</b> <span>${n.up.u?(state.project.dualCore&&result.core?`${n.up.u/2} × ${n.up.speed}G to each core${n.n>1?', per switch':''}`:`${n.up.u} × ${n.up.speed}G uplinks ${n.n>1?'each':''}`):'standalone'}</span></p>
+        ${team()&&n.alts.length>1?`<p class="alts">Also fits: ${n.alts.filter(a=>a.pid!==n.pid).slice(0,3).map(a=>`<button class="chip" data-act="use" data-pid="${esc(a.pid)}">${esc(a.name)} × ${a.n}</button>`).join('')}</p>`:''}`).join('')}</div>`:''}
+    </section>`;}).join('');
+  $('#libwrap').hidden=!team();
+  $('#lib').innerHTML=team()&&libOpen?`<div class="libt"><div class="lr lh"><span>Device</span><span>Link</span><span>Media</span><span>PoE W</span><span>Mb/s</span><span></span></div>
+    ${state.endpoints.map((e,i)=>`<div class="lr" data-i="${i}"><input data-xf="Name" value="${esc(e.Name)}" aria-label="Device name">
+      <select data-xf="Link_Speed_Gbps">${String(SET().Endpoint_Speeds_Gbps||'1,2.5,10,25').split(',').map(Number).map(v=>`<option value="${v}"${+e.Link_Speed_Gbps===v?' selected':''}>${v}G</option>`).join('')}</select>
+      <select data-xf="Media">${['Copper','Fiber'].map(v=>`<option${e.Media===v?' selected':''}>${v}</option>`).join('')}</select>
+      <input type="number" min="0" max="90" data-xf="PoE_W" value="${esc(e.PoE_W??0)}" aria-label="PoE watts"><input type="number" min="0" data-xf="Stream_Mbps" value="${esc(e.Stream_Mbps??'')}" aria-label="Stream Mbps">
+      <button class="ghost x" data-act="delx" aria-label="Remove device type">×</button></div>`).join('')}
+    <button class="ghost add" data-act="addx">Add device type</button><p class="mut small">Session-only. Make permanent changes in the Endpoints sheet and publish the catalog.</p></div>`:'';
+  $('#libbtn').textContent=libOpen?'Hide device library':'Edit device library';
+}
+
+function run(){ result=ENG.design(CAT,state); save(); renderInputs(); renderResults(); }
+let tmr; const later=()=>{ clearTimeout(tmr); tmr=setTimeout(run,300); };
+document.addEventListener('input',ev=>{
+  const t=ev.target; if(!t.dataset||t.closest('#modal')||t.closest('#adminpage')) return;
+  const val=t.type==='checkbox'?t.checked:(t.type==='number'?(t.value===''?'':+t.value):t.value);
+  if(t.dataset.p){ let v=val; if(['dualUplink'].includes(t.dataset.p)&&t.tagName==='SELECT') v=(val==='true'); if(['voltage','oversub','support'].includes(t.dataset.p)) v=+val;
+    state.project[t.dataset.p]=v; if(t.dataset.p==='dualCore'){ state.project.dualUplink=v; } }
+  else if(t.dataset.lf){ state.locations[+t.closest('.loc').dataset.l][t.dataset.lf]=val; }
+  else if(t.dataset.ef){ state.locations[+t.closest('.loc').dataset.l].eps[+t.closest('.ep').dataset.e][t.dataset.ef]=val; }
+  else if(t.dataset.xf){ const e=state.endpoints[+t.closest('.lr').dataset.i]; e[t.dataset.xf]=t.dataset.xf==='Link_Speed_Gbps'?+val:val; }
+  else return;
+  if(t.tagName==='SELECT'||t.type==='checkbox'||t.type==='radio') run(); else { result=ENG.design(CAT,state); save(); renderResults(); later(); }
+});
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-act],[data-tab]'); if(!b) return;
+  if(b.dataset.tab){ tab=b.dataset.tab; renderResults(); return; }
+  const loc=b.closest('.loc'), li=loc?+loc.dataset.l:-1, a=b.dataset.act;
+  switch(a){
+    case 'adde': state.locations[li].eps.push({ep:state.endpoints[0].Endpoint_ID,qty:1}); break;
+    case 'dele': state.locations[li].eps.splice(+b.closest('.ep').dataset.e,1); break;
+    case 'dell': state.locations.splice(li,1); break;
+    case 'use': state.locations[li].override=b.dataset.pid; break;
+    case 'addl': { const n=state.locations.filter(l=>l.type==='IDF').length+1; state.locations.push({id:nid(),name:'Closet '+n,type:'IDF',distance:100,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:8}]}); break; }
+    case 'adv': advOpen=!advOpen; break;
+    case 'lib': libOpen=!libOpen; break;
+    case 'addx': state.endpoints.push({Endpoint_ID:'EP-CUSTOM-'+Date.now().toString(36),Name:'Custom device',Category:'Custom',Link_Speed_Gbps:1,Media:'Copper',PoE_W:0,Stream_Mbps:100}); break;
+    case 'delx': { const i=+b.closest('.lr').dataset.i, id=state.endpoints[i].Endpoint_ID; if(state.locations.some(L=>L.eps.some(e=>e.ep===id))){ toast('That device type is used in a room. Remove it there first.'); return; } state.endpoints.splice(i,1); break; }
+    case 'reset': if(!confirmReset()) return; state=DEFAULT(); break;
+    case 'xlsx': return exportXlsx(); case 'csv': return exportCsv(); case 'svg': return exportSvg();
+    case 'json': return saveFile(`${slug()}-project.json`,JSON.stringify(state,null,2));
+    case 'loadjson': return $('#fjson').click();
+    case 'request': return openModal();
+    case 'close': return closeModal();
+    case 'package': return buildPackage();
+    case 'dlzip': if(PKG){ saveFile(PKG.name,PKG.blob); track('package'); } return;
+    case 'addatt': return $('#rq-files').click();
+    case 'delatt': ATT.splice(+b.dataset.i,1); return renderAtt();
+    case 'pickcat': return $('#fcat').click();
+    case 'publishcat': return publishCatalog();
+    case 'discard': staged=null; return renderAdmin();
+    case 'dlpkg': markViewed([[b.dataset.u,b.dataset.r]]); return downloadStored(b.dataset.u,b.dataset.r);
+    case 'viewreq': { const r=b.dataset.r; if(OPEN.has(r)) OPEN.delete(r); else { OPEN.add(r); markViewed([[b.dataset.u,r]]); } return renderAdmin(); }
+    case 'viewall': return markViewed(allReqs().filter(isNew).map(r=>[r.uid,r.rid]));
+    case 'openreq': markViewed([[b.dataset.u,b.dataset.r]]); return openReq(b.dataset.u,b.dataset.r);
+    case 'revert': CAT=BUILTIN; CATMETA={version:ENG.settings(BUILTIN).Catalog_Version,source:'Built-in catalog'}; catInfo(); break;
+    default: return;
+  }
+  run();
+});
+let resetArmed=0; function confirmReset(){ if(Date.now()-resetArmed<4000) return true; resetArmed=Date.now(); toast('Press Start over again to clear every room.'); return false; }
+
+// ---------- results ----------
+const CATORDER=['Switches','Power','Optics','Cabling','Wireless','Gateway','Support'];
+function rollup(){ const m={}; for(const b of result.bom){ if(!m[b.sku]) m[b.sku]={...b,locs:new Set()}; else m[b.sku].qty+=b.qty; m[b.sku].locs.add(b.loc); }
+  return Object.values(m).sort((a,b)=>CATORDER.indexOf(a.cat)-CATORDER.indexOf(b.cat)||a.sku.localeCompare(b.sku)); }
+function stats(){ return {sw:result.bom.filter(b=>b.cat==='Switches').reduce((s,b)=>s+b.qty,0),eps:result.totalEps,poe:result.power.reduce((s,p)=>s+p.poe*p.n,0),est:result.power.reduce((s,p)=>s+p.est*p.n,0),ru:result.power.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0)}; }
+function renderResults(){
+  const s=stats(), T=result.settings;
+  $('#disc').innerHTML=`<div><b>Estimate for planning only.</b> ${esc(T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the ProAV Design team before ordering.')}<br>Please click <b>Request validation</b> to download the design file.</div><button class="btn" data-act="request">Request validation</button>`;
+  $('#stats').innerHTML=`<div><b>${fmt(s.eps)}</b><span>devices</span></div><div><b>${fmt(s.sw)}</b><span>switches</span></div><div><b>${fmt(s.poe)} W</b><span>PoE load</span></div><div><b>${fmt(s.est/1000,1)} kW</b><span>estimated power</span></div><div><b>${fmt(s.ru,1)} U</b><span>rack space</span></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));
+  const warn=result.notes.filter(n=>n.lvl==='warn').length+result.errors.length;
+  $('#tabchecks').textContent=warn?`Checks (${warn})`:'Checks';
+  const out=$('#out');
+  if(tab==='diagram') out.innerHTML=errs()+`<div class="scroll">${diagram(false)}</div><p class="cap">Green lines are uplinks, labelled with link count, speed and the optic or cable used. With a redundant core, every switch has its own full-capacity link group to each core, so either core can carry all traffic alone.</p>`;
+  if(tab==='bom'){ const rows=rollup();
+    out.innerHTML=errs()+`<div class="scroll"><table class="t"><thead><tr><th>Part number</th><th>Description</th><th class="r">Qty</th><th>Where</th>${team()?'<th>Notes</th>':''}</tr></thead><tbody>${
+      CATORDER.filter(c=>rows.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${team()?5:4}">${c}</td></tr>`+rows.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join('')}</tbody></table></div>
+      <p class="cap">Part numbers are for ${esc(state.project.region)}${state.project.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.</p>`; }
+  if(tab==='power'){ const P=state.project, locs=[...new Set(result.power.map(p=>p.loc))], eff=+T.PSU_Efficiency||0.9;
+    out.innerHTML=`<div class="closets">${locs.map(l=>{ const r=result.power.filter(p=>p.loc===l); const w=r.reduce((s,p)=>s+p.est*p.n,0), mx=r.reduce((s,p)=>s+p.max*p.n,0), ru=r.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0);
+        const amps=w/P.voltage, circ=Math.max(1,Math.ceil(amps/(P.voltage>=200?16*0.8:20*0.8)));
+        return `<div class="closet"><h4>${esc(l)}</h4><dl><dt>Estimated draw</dt><dd>${fmt(w)} W</dd><dt>Datasheet maximum</dt><dd>${fmt(mx)} W</dd><dt>Heat load</dt><dd>${fmt(w*3.412)} BTU/hr</dd><dt>Current at ${P.voltage} V</dt><dd>${fmt(amps,1)} A</dd><dt>Circuits</dt><dd>${circ} × ${P.voltage>=200?'16':'20'} A</dd><dt>UPS size</dt><dd>${fmt(w/0.9)} VA or more</dd><dt>Rack space</dt><dd>${fmt(ru,1)} U</dd></dl></div>`;}).join('')}</div>
+      <h3>Power supplies per switch</h3><div class="scroll"><table class="t"><thead><tr><th>Room</th><th>Device</th><th class="r">Qty</th><th class="r">PoE load each</th><th>Power supplies</th><th class="r">PoE available${P.psuRed?' (after a PSU failure)':''}</th><th class="r">Headroom</th><th class="r">Est. draw each</th></tr></thead><tbody>${
+      result.power.map(p=>`<tr><td>${esc(p.loc)}</td><td>${esc(p.model)}</td><td class="r">${p.n}</td><td class="r">${p.poe?fmt(p.poe)+' W':'–'}</td><td>${esc(p.cfg)}</td><td class="r">${p.budget?fmt(p.budget)+' W':'–'}</td><td class="r">${p.head!==null?fmt(p.head*100)+'%':'–'}</td><td class="r">${fmt(p.est)} W</td></tr>`).join('')}</tbody></table></div>
+      <p class="cap">Estimated draw = datasheet maximum without PoE + PoE load ÷ ${eff} (PSU efficiency). Circuits assume 80% continuous load. ${P.psuRed?'Feed each power supply from a separate circuit or UPS.':''}</p>`; }
+  if(tab==='checks') out.innerHTML=errs()+`<ul class="notes">${result.notes.map(n=>`<li class="${n.lvl}"><span>${n.lvl==='warn'?'!':'i'}</span>${esc(n.msg)}</li>`).join('')}</ul>
+     <h3>Uplink plan</h3><div class="scroll"><table class="t"><thead><tr><th>Room</th><th>Switch</th><th class="r">Units</th><th class="r">Uplinks each</th><th>Speed</th><th>Run</th><th>Optic / cable</th></tr></thead><tbody>${result.links.map(l=>`<tr><td>${esc(l.loc)}</td><td>${esc(l.model)}</td><td class="r">${l.n}</td><td class="r">${l.u}</td><td>${l.speed}G</td><td>${esc(l.media)}${l.media!=='in-rack'?`, ${l.dist} m`:''}</td><td class="sku">${/^TBD/.test(l.optic)?'To be confirmed':esc(l.optic)}</td></tr>`).join('')||'<tr><td colspan="7" class="mut">Single switch, no uplinks needed.</td></tr>'}</tbody></table></div>`;
+}
+const errs=()=>result.errors.map(e=>`<p class="err"><b>${esc(e.loc)}:</b> ${esc(e.msg)}</p>`).join('');
+
+// ---------- diagram ----------
+function diagram(forExport){
+  const cv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim(); // export uses the colours currently on screen
+  const C=forExport?{page:cv('--bg')||'#101520',bg:cv('--bg2')||'#161d2b',box:cv('--box')||'#2B3749',line:cv('--accent')||'#26E880',txt:cv('--fg')||'#FFFFFF',mut:cv('--mut')||'#94A3B8',gw:cv('--mut')||'#94A3B8'}:{bg:'var(--bg2)',box:'var(--box)',line:'var(--accent)',txt:'var(--fg)',mut:'var(--mut)',gw:'var(--mut)'};
+  const F="Outfit, Arial, sans-serif", nodes=result.accessNodes, locs=state.locations.filter(L=>nodes.some(n=>n.loc===L.name));
+  if(!locs.length) return `<p class="empty">Add devices to a room to see the network.</p>`;
+  const colW=250, gap=24, W=Math.max(760,locs.length*(colW+gap)+gap), core=result.core, gwOn=state.project.gateway;
+  const yGw=30, yCore=core?140:0, yLoc=core?300:(gwOn?170:40), cx=W/2;
+  const box=(x,y,w,h,f,st)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${f}"${st?` stroke="${st}" stroke-width="1.5"`:''}/>`;
+  const text=(x,y,t,o={})=>`<text x="${x}" y="${y}" fill="${o.c||C.txt}" font-size="${o.s||13}" font-weight="${o.w||400}" text-anchor="${o.a||'middle'}" font-family="${F}">${esc(t)}</text>`;
+  const cb=[]; if(core){ const bw=190, tot=core.k*bw+(core.k-1)*40; for(let i=0;i<core.k;i++) cb.push({x:cx-tot/2+i*(bw+40),y:yCore,w:bw,h:62}); }
+  const UH=34, UG=6, EL=15; const unitH=(un,n)=>UH+un.eps.length*EL+8+(n.up.u?34:18);
+  const hs=locs.map(L=>{ const ns=nodes.filter(n=>n.loc===L.name); return 44+ns.reduce((a,n)=>a+16+n.units.reduce((b,un)=>b+unitH(un,n)+UG,0),0)+(result.links.some(l=>l.loc===L.name)?52:36)+8; });
+  const H=yLoc+Math.max(...hs)+(forExport?60:30);
+  let s='', lines='', labels='';
+  const x0=(W-(locs.length*(colW+gap)+gap))/2;
+  locs.forEach((L,i)=>{ const x=x0+gap+i*(colW+gap), y=yLoc, ns=nodes.filter(n=>n.loc===L.name), up=result.links.filter(l=>l.loc===L.name), tx=x+colW/2;
+    if(core) cb.forEach((c,ci)=>{ const t=c.x+c.w/2; lines+=`<path d="M${tx} ${y} C ${tx} ${y-70}, ${t} ${c.y+c.h+70}, ${t} ${c.y+c.h}" fill="none" stroke="${C.line}" stroke-width="2" opacity="${ci?0.55:1}"/>`; });
+    else if(gwOn) lines+=`<line x1="${tx}" y1="${y}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+    if(up.length&&core){ const o=up[0]; labels+=box(tx-95,y-38,190,30,C.bg)+text(tx,y-26,(()=>{ const dc=result.dualCore&&core.k>1, m={}; up.forEach(l=>m[l.speed]=(m[l.speed]||0)+(dc?l.u/2:l.u)*l.n); return Object.entries(m).sort((a,b)=>b[0]-a[0]).map(([s,q])=>`${q} × ${s}G`).join(' + ')+(dc?' to each core':''); })(),{s:11.5,w:600,c:C.line})+text(tx,y-13,`${/^TBD/.test(o.optic)?'optic to be confirmed':o.optic}${o.media==='in-rack'?', in-rack':`, ${o.dist} m ${o.media}`}`,{s:10.5,c:C.mut}); }
+    s+=box(x,y,colW,hs[i],C.box)+text(x+14,y+24,L.name,{a:'start',s:15,w:700})+text(x+colW-14,y+24,L.type,{a:'end',s:11,c:C.mut});
+    const line=state.project.basis!=='stream'; const gb=v=>(v>=100?Math.round(v):Math.round(v*10)/10).toLocaleString()+' Gbps';
+    const cut=(t,m)=>t.length>m?t.slice(0,m-1)+'…':t;
+    let yy=y+38, sw=0, tot=0, upCap=0;
+    ns.forEach(n=>{ s+=text(x+14,yy+11,n.group,{a:'start',s:10,c:C.mut}); yy+=16;
+      n.units.forEach(un=>{ sw++; const dc=result.dualCore&&core&&core.k>1, per=dc?n.up.u/2:n.up.u, h=unitH(un,n), cap=per*n.up.speed; tot+=un.bw; upCap+=cap;
+        s+=box(x+12,yy,colW-24,h,C.bg,C.line)+text(x+22,yy+15,n.model,{a:'start',s:12,w:600})+text(x+colW-22,yy+15,`SW${sw}`,{a:'end',s:10.5,w:600,c:C.line});
+        const ports=Math.min(10,Math.max(4,Math.round((n.ports||24)/4))); for(let p=0;p<ports;p++) s+=`<rect x="${x+22+p*6}" y="${yy+20}" width="4" height="8" rx="1" fill="${C.line}" opacity="0.7"/>`;
+        let ly=yy+UH+10; un.eps.forEach(ep=>{ s+=text(x+22,ly,cut(`${ep.qty} × ${ep.name}`,29),{a:'start',s:10.5,c:C.mut})+text(x+colW-22,ly,gb(ep.bw),{a:'end',s:10.5,c:C.mut}); ly+=EL; });
+        ly-=4; s+=`<line x1="${x+20}" y1="${ly}" x2="${x+colW-20}" y2="${ly}" stroke="${C.mut}" stroke-width="1" opacity="0.5"/>`;
+        s+=text(x+22,ly+14,'Switch total',{a:'start',s:10.5,w:600})+text(x+colW-22,ly+14,gb(un.bw),{a:'end',s:10.5,w:700});
+        if(cap){ const r=un.bw/cap; s+=text(x+22,ly+28,`${dc?`${per} × ${n.up.speed}G per core`:`Uplink ${per} × ${n.up.speed}G`}${r<=1?'':` (${r.toFixed(1)}:1)`}`,{a:'start',s:10.5,c:C.mut})+text(x+colW-22,ly+28,gb(cap),{a:'end',s:10.5,w:600,c:r<=(state.project.oversub||1)+1e-9?C.line:C.txt}); }
+        yy+=h+UG; }); });
+    yy+=4; s+=`<line x1="${x+14}" y1="${yy}" x2="${x+colW-14}" y2="${yy}" stroke="${C.mut}" stroke-width="1" opacity="0.6"/>`;
+    s+=text(x+16,yy+17,line?'Room total at line-rate':'Room total stream bandwidth',{a:'start',s:11.5,w:600})+text(x+colW-16,yy+17,gb(tot),{a:'end',s:11.5,w:700});
+    if(upCap){ const ratio=tot/upCap; s+=text(x+16,yy+33,`${result.dualCore&&core&&core.k>1?'Room uplink per core':'Room uplink capacity'}${ratio<=1?'':` (${ratio.toFixed(1)}:1)`}`,{a:'start',s:11,c:C.mut})+text(x+colW-16,yy+33,gb(upCap),{a:'end',s:11,w:600,c:ratio<=(state.project.oversub||1)+1e-9?C.line:C.txt}); }
+  });
+  if(core){ cb.forEach((c,i)=>{ s+=box(c.x,c.y,c.w,c.h,C.box,C.line)+text(c.x+c.w/2,c.y+24,core.p.Model_Name,{s:13.5,w:700})+text(c.x+c.w/2,c.y+42,core.k>2?`Aggregation ${i+1}`:(core.k>1?`Core ${i?'B':'A'}`:'Core'),{s:11,c:C.mut})+text(c.x+c.w/2,c.y+56,core.psu.label,{s:10,c:C.mut}); });
+    for(let i=0;i<cb.length-1;i++){ const a=cb[i],b=cb[i+1]; lines+=`<line x1="${a.x+a.w}" y1="${a.y+22}" x2="${b.x}" y2="${b.y+22}" stroke="${C.line}" stroke-width="3"/><line x1="${a.x+a.w}" y1="${a.y+36}" x2="${b.x}" y2="${b.y+36}" stroke="${C.line}" stroke-width="3"/>`; labels+=text((a.x+a.w+b.x)/2,a.y+58,`${core.isl} × ${core.islSpeed}G`,{s:10.5,w:600,c:C.line})+text((a.x+a.w+b.x)/2,a.y+71,`needs ${Math.round(core.islReq)} Gbps`,{s:9.5,c:C.mut}); }
+    if(gwOn) lines+=`<line x1="${cb[0].x+cb[0].w/2}" y1="${yCore}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5"/>`; }
+  if(gwOn) s+=box(cx-95,yGw,190,48,C.box)+text(cx,yGw+21,'PR460X Pro Router',{s:13,w:700})+text(cx,yGw+37,'Internet gateway',{s:10.5,c:C.mut});
+  const foot=forExport?text(20,H-22,`${state.project.name||'Project'}: estimate only, must be validated by the ProAV Design team before ordering. Catalog ${CATMETA.version}.`,{a:'start',s:11,c:C.mut}):'';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Network diagram">${forExport?`<style>@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;display=swap');</style><rect width="100%" height="100%" fill="${C.page}"/>`:''}${lines}${s}${labels}${foot}</svg>`;
+}
+
+// ---------- request validation ----------
+let ATT=[];
+const MAIL=()=>result.settings.Validation_Contact_Email||'ProAVDesign@netgear.com';
+const subj=()=>`Design validation: ${state.project.name||'Untitled project'}`;
+let PKG=null;
+function openModal(){ ATT=[]; PKG=null;
+  $('#modal').innerHTML=`<div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Request validation</h2>
+    <p>The ProAV Design team reviews the design and confirms the bill of materials.</p>
+    <p>Please fill in the form below, and forward the ZIP file to <b>${esc(MAIL())}</b>.</p>
+    <label class="fld wide"><span>Name</span><input type="text" id="rq-name" autocomplete="name"></label>
+    <label class="fld wide"><span>Company name</span><input type="text" id="rq-co" autocomplete="organization"></label>
+    <label class="fld wide"><span>Email</span><input type="email" id="rq-email" autocomplete="email" required></label>
+    <label class="fld wide"><span>Anything else we should know?</span><textarea id="rq-notes" rows="3"></textarea></label>
+    <div class="fld wide"><span>Attachments (you can add several files)</span>
+      <button type="button" class="ghost" data-act="addatt">Upload files</button><input type="file" id="rq-files" multiple hidden>
+      <ul class="att" id="rq-att"></ul></div>
+    <p class="note-next">Next version will allow auto-sending the data through this form.</p>
+    <div class="mfoot"><button class="ghost" data-act="close">Cancel</button><button class="btn" data-act="package">Generate</button></div></div>`;
+  $('#modal').hidden=false;
+  $('#rq-files').addEventListener('change',ev=>{ for(const f of ev.target.files) if(!ATT.some(a=>a.name===f.name&&a.size===f.size)) ATT.push(f); ev.target.value=''; renderAtt(); });
+  setTimeout(()=>$('#rq-name').focus(),30);
+}
+function readyStep(){ const m=PKG.meta, s=stats();
+  const body=`Hello ProAV Design team,\n\nPlease validate the attached design.\n\nProject: ${state.project.name||'Untitled project'}\nName: ${m.name||''}\nCompany: ${m.company||''}\nEmail: ${m.email}\nRequest ID: ${m.rid}\nDevices: ${s.eps}, switches: ${s.sw}\n${m.notes?`\nNotes:\n${m.notes}\n`:''}\nThe design file (ZIP) is attached.\n\nThank you`;
+  const href=`mailto:${MAIL()}?subject=${encodeURIComponent(subj())}&body=${encodeURIComponent(body)}`;
+  $('#modal').innerHTML=`<div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Your design file is ready</h2>
+    <p>Download the ZIP file, then email it to the ProAV Design team.</p>
+    <div class="steps">
+      <div class="step"><span>1</span><div><b>Download the design file</b><p class="mut small">${esc(PKG.name)} (${PKG.blob.size<1048576?fmt(Math.max(1,PKG.blob.size/1024))+' KB':fmt(PKG.blob.size/1048576,1)+' MB'})</p>
+        <button class="btn dl" data-act="dlzip">Download ZIP</button></div></div>
+      <div class="step"><span>2</span><div><b>Email it to ProAV Design</b><p class="mut small">Opens a new email with the address and subject filled in. Attach the ZIP file before sending.</p>
+        <a class="btn" href="${esc(href)}" target="_blank" rel="noopener">Click to email</a></div></div>
+    </div>
+    <p class="mut small">If your email doesn't open, send the ZIP file to <b>${esc(MAIL())}</b> with the subject <b>${esc(subj())}</b>.</p>
+    <div class="mfoot"><button class="ghost" data-act="close">Done</button></div></div>`;
+}
+function renderAtt(){ const tot=ATT.reduce((s,f)=>s+f.size,0);
+  $('#rq-att').innerHTML=ATT.map((f,i)=>`<li><span>${esc(f.name)}</span><span class="mut">${f.size<1048576?fmt(Math.max(1,f.size/1024))+' KB':fmt(f.size/1048576,1)+' MB'}</span><button class="ghost x" data-act="delatt" data-i="${i}" aria-label="Remove ${esc(f.name)}">×</button></li>`).join('')+(tot>20*1048576?`<li class="err">Attachments total ${fmt(tot/1048576,1)} MB. Many mail systems reject messages over 20–25 MB.</li>`:''); }
+function closeModal(){ $('#modal').hidden=true; }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#modal').hidden) closeModal(); });
+const b64=buf=>{ const b=new Uint8Array(buf); let s=''; for(let i=0;i<b.length;i+=0x8000) s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000)); return btoa(s); };
+const wrap76=s=>s.replace(/.{1,76}/g,'$&\r\n');
+const encHdr=s=>/^[\x20-\x7e]*$/.test(s)?s:'=?UTF-8?B?'+btoa(unescape(encodeURIComponent(s)))+'?=';
+function summaryText(meta){ const P=state.project, s=stats(), L=[];
+  const line=(a='')=>L.push(a);
+  line(`DESIGN VALIDATION REQUEST`); line(`Project: ${P.name||'Untitled project'}`); line(`Request ID: ${meta.rid}`); line(`Created: ${meta.at}`);
+  line(`Requested by: ${meta.name||'-'} <${meta.email}>${meta.company?`, ${meta.company}`:''}`); line(`Catalog version: ${CATMETA.version}`); line();
+  line('ESTIMATE ONLY: '+(result.settings.Disclaimer||'')); line();
+  line('SETTINGS'); line(`Region: ${P.region}   Mains: ${P.voltage} V   TAA: ${P.taa?'Yes':'No'}`);
+  line(`Redundant power: ${P.psuRed?(P.psuScope==='mdf'?'main equipment room only':'all switches'):'No'}   Redundant core: ${P.dualCore?'Yes':'No'}   Gateway: ${P.gateway?'PR460X':'No'}`);
+  line(`Switch series: ${P.family==='Auto'?'Best fit':P.family+' only'}   Design basis: ${P.basis==='stream'?'stream bandwidth':'line-rate'}   Oversubscription: ${P.oversub}:1   Spare ports: ${P.spare}%   PoE headroom: ${P.poeHead}%`); line();
+  line(`TOTALS: ${s.eps} devices, ${s.sw} switches, ${fmt(s.poe)} W PoE, ${fmt(s.est)} W estimated draw, ${fmt(s.ru,1)} U`); line();
+  const dc=result.dualCore&&result.core&&result.core.k>1;
+  state.locations.forEach(Lc=>{ const ns=result.accessNodes.filter(n=>n.loc===Lc.name); if(!ns.length) return;
+    line(`${Lc.name.toUpperCase()} (${Lc.type}${Lc.type==='IDF'?`, ${Lc.distance} m ${Lc.media} to main room`:''})`);
+    let sw=0; ns.forEach(n=>n.units.forEach(un=>{ sw++; line(`  SW${sw} ${n.model}`); un.eps.forEach(ep=>line(`     ${ep.qty} x ${ep.name}  ${fmt(ep.bw,1)} Gbps`));
+      line(`     Switch total ${fmt(un.bw,1)} Gbps; uplink ${n.up.u?(dc?`${n.up.u/2} x ${n.up.speed}G to each core`:`${n.up.u} x ${n.up.speed}G`):'none (standalone)'}`); }));
+    line(); });
+  if(result.core){ line(`CORE: ${result.core.k} x ${result.core.p.Model_Name} (${result.core.psu.label})${result.core.isl?`; core-to-core ${result.core.isl} x ${result.core.islSpeed}G, needs ${Math.round(result.core.islReq)} Gbps`:''}`); line(); }
+  line('BILL OF MATERIALS'); rollup().forEach(r=>line(`  ${String(r.qty).padStart(4)}  ${r.sku.padEnd(20)} ${r.desc}`)); line();
+  if(result.errors.length||result.notes.length){ line('CHECKS'); result.errors.forEach(x=>line(`  ! ${x.loc}: ${x.msg}`)); result.notes.forEach(n=>line(`  ${n.lvl==='warn'?'!':'-'} ${n.msg}`)); line(); }
+  if(meta.notes){ line('NOTES FROM REQUESTER'); line(meta.notes); line(); }
+  if(ATT.length){ line('ATTACHMENTS'); ATT.forEach(f=>line(`  ${f.name}`)); }
+  return L.join('\r\n'); }
+async function buildPackage(){
+  const name=(state.project.name||'').trim()||'Untitled project', email=$('#rq-email').value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('Enter a valid work email.'); $('#rq-email').focus(); return; }
+  if(!window.JSZip){ toast('ZIP library did not load.'); return; }
+  const meta={rid:'NTGR-'+Date.now().toString(36).toUpperCase(),at:new Date().toISOString(),name:$('#rq-name').value.trim(),email,company:$('#rq-co').value.trim(),notes:$('#rq-notes').value.trim()};
+  const xl=buildXlsx(); if(!xl) return;
+  const base=slug(), s=stats(), summary=summaryText(meta);
+  const files=[
+    {n:'Design summary.txt',d:summary,t:'text/plain; charset=UTF-8'},
+    {n:`${base}-bom.xlsx`,d:await xl.arrayBuffer(),t:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
+    {n:`${base}-network.svg`,d:diagram(true),t:'image/svg+xml'},
+    {n:`${base}-project.json`,d:JSON.stringify(state,null,2),t:'application/json'},
+    {n:'request.json',d:JSON.stringify({type:'design_validation',requestId:meta.rid,createdAt:meta.at,to:MAIL(),subject:subj(),requester:{name:meta.name,email,company:meta.company},
+      project:{name,region:state.project.region,taa:!!state.project.taa,redundantPower:state.project.psuRed?(state.project.psuScope==='mdf'?'mdf':'all'):'none',redundantCore:!!state.project.dualCore,family:state.project.family},
+      totals:{devices:s.eps,switches:s.sw,poeW:Math.round(s.poe),estDrawW:Math.round(s.est),rackU:s.ru},bom:rollup().map(r=>({sku:r.sku,qty:r.qty,category:r.cat})),catalogVersion:CATMETA.version,notes:meta.notes,attachments:ATT.map(f=>f.name)},null,2),t:'application/json'}];
+  const att=[]; for(const f of ATT) att.push({n:f.name,d:await f.arrayBuffer(),t:f.type||'application/octet-stream'});
+  // ready-to-send email (opens as a draft in Outlook / Apple Mail)
+  const B='=_ntgr_'+Math.random().toString(36).slice(2);
+  const body=`Hello ProAV Design team,\r\n\r\nPlease validate the attached design.\r\n\r\nProject: ${name}\r\nRequested by: ${meta.name||''} <${email}>${meta.company?` (${meta.company})`:''}\r\nRequest ID: ${meta.rid}\r\nDevices: ${s.eps}, switches: ${s.sw}, catalog ${CATMETA.version}\r\n${meta.notes?`\r\nNotes:\r\n${meta.notes}\r\n`:''}\r\nThe design summary, bill of materials, network diagram and project file are attached.\r\n\r\nThank you`;
+  let eml=`X-Unsent: 1\r\nTo: ${MAIL()}\r\nSubject: ${encHdr(subj())}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="${B}"\r\n\r\n--${B}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap76(btoa(unescape(encodeURIComponent(body))))}`;
+  for(const f of [...files,...att]){ const data=typeof f.d==='string'?b64(new TextEncoder().encode(f.d)):b64(f.d);
+    eml+=`--${B}\r\nContent-Type: ${f.t}; name="${encHdr(f.n)}"\r\nContent-Disposition: attachment; filename="${encHdr(f.n)}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap76(data)}`; }
+  eml+=`--${B}--\r\n`;
+  const readme=`HOW TO SEND THIS DESIGN FOR VALIDATION\r\n\r\n1. Double-click "Send this email.eml". It opens a ready-made email with every file attached.\r\n2. Check it and press Send.\r\n\r\nOr send it yourself:\r\n  To:      ${MAIL()}\r\n  Subject: ${subj()}\r\n  Attach:  this ZIP file\r\n\r\nContents\r\n  Design summary.txt       Settings, rooms, switches, bandwidth per switch, BoM, checks\r\n  ${base}-bom.xlsx     Bill of materials, per room, power, checks\r\n  ${base}-network.svg  Network diagram\r\n  ${base}-project.json Reopen in the BoM builder with "Open project"\r\n  request.json             Machine-readable request (for automated intake)\r\n  Attachments/             Files you added\r\n\r\nRequest ID: ${meta.rid}\r\nThis is an estimate and must be validated by the ProAV Design team before ordering.\r\n`;
+  const zip=new JSZip(), root=zip.folder(`Design validation - ${name.replace(/[\\/:*?"<>|]/g,'-')}`);
+  root.file('README - how to send.txt',readme); root.file('Send this email.eml',eml);
+  files.forEach(f=>root.file(f.n,f.d)); if(att.length){ const a=root.folder('Attachments'); att.forEach(f=>a.file(f.n,f.d)); }
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+  if(blob.size>16*1048576) toast('The package is large; some mail systems may reject it.');
+  PKG={blob,meta,name:`design-validation-${base}-${meta.at.slice(0,10)}.zip`};
+  readyStep();
+  if(DB&&UID){ try{ let pkg=null; try{ pkg=await storePackage(blob,meta.rid); }catch(e){}
+    const ref=DB.doc('requests/'+UID); const cur=await ref.get(); const items=cur.exists?JSON.parse(cur.data().items||'[]'):[];
+    items.unshift({rid:meta.rid,at:meta.at,email,name:meta.name,company:meta.company,notes:meta.notes,project:name,devices:s.eps,switches:s.sw,catalog:CATMETA.version,status:'New',design:JSON.stringify(state),pkg,attachments:ATT.map(f=>f.name)});
+    await ref.set({items:JSON.stringify(items.slice(0,25)),updated:meta.at}); }catch(e){} }
+}
+
+// ---------- admin page (separate page; hosted later behind a login) ----------
+function route(){ const want=location.hash==='#admin'; document.body.dataset.page=want?'admin':'builder'; if(want) renderAdmin(); else window.scrollTo(0,0); }
+window.addEventListener('hashchange',route);
+function renderAdmin(){ const el=$('#adminpage'); if(document.body.dataset.page!=='admin') return;
+  el.innerHTML=canTeam?adminPage():`<div class="adminhead"><div><h2>Admin</h2><p class="mut">This page is for the ProAV Design team. Ask the owner for editor access.</p></div><a class="ghost" href="#">Back to the BoM builder</a></div>`; }
+const fmtSize=b=>b<1048576?fmt(Math.max(1,b/1024))+' KB':fmt(b/1048576,1)+' MB';
+const CHUNK=180000, MAXSTORE=15*1048576;
+async function storePackage(blob,rid){ // ZIP kept as base64 chunks under packages/<uid>/ (admin-readable only)
+  if(!DB||!UID||blob.size>MAXSTORE) return null;
+  const s=b64(await blob.arrayBuffer()), parts=Math.ceil(s.length/CHUNK);
+  for(let i=0;i<parts;i++) await DB.doc(`packages/${UID}/parts/${rid}-${i}`).set({d:s.slice(i*CHUNK,(i+1)*CHUNK)});
+  return {parts,size:blob.size,name:PKG.name}; }
+async function downloadStored(u,r){ const d=REQS.find(x=>x.uid===u), it=d&&d.items.find(i=>i.rid===r); if(!it||!it.pkg) return;
+  try{ toast('Preparing download…'); let s=''; for(let i=0;i<it.pkg.parts;i++){ const doc=await DB.doc(`packages/${u}/parts/${r}-${i}`).get(); if(!doc.exists) throw new Error('missing part'); s+=doc.data().d; }
+    const bin=atob(s), a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+    await saveFile(it.pkg.name||`design-validation-${r}.zip`,new Blob([a],{type:'application/zip'})); }
+  catch(e){ toast('Could not load that design file.'); } }
+
+// ---------- usage counter (proves the use case) ----------
+let USAGE=[];
+async function track(kind){ if(!DB||!UID) return;
+  try{ const ref=DB.doc('usage/'+UID), cur=await ref.get(), d=cur.exists?cur.data():{};
+    const day=new Date().toISOString().slice(0,10), days=JSON.parse(d.days||'{}'); days[day]=(days[day]||0)+(kind==='session'?1:0);
+    const nd={sessions:(d.sessions||0)+(kind==='session'?1:0),boms:(d.boms||0)+(kind==='bom'?1:0),diagrams:(d.diagrams||0)+(kind==='diagram'?1:0),packages:(d.packages||0)+(kind==='package'?1:0),
+      first:d.first||new Date().toISOString(),last:new Date().toISOString(),days:JSON.stringify(days)};
+    await ref.set(nd); }catch(e){} }
+function usagePanel(){
+  if(!DB) return '<section><h3>Usage</h3><p class="mut">Usage is counted when the tool runs with shared storage.</p></section>';
+  const now=Date.now(), d30=new Date(now-30*864e5).toISOString().slice(0,10);
+  const t=USAGE.reduce((a,u)=>{ const days=JSON.parse(u.days||'{}'); const s30=Object.entries(days).filter(([k])=>k>=d30).reduce((x,[,v])=>x+v,0);
+    a.users++; a.sessions+=u.sessions||0; a.boms+=u.boms||0; a.diagrams+=u.diagrams||0; a.packages+=u.packages||0; a.s30+=s30; if(s30) a.active30++; return a; },{users:0,sessions:0,boms:0,diagrams:0,packages:0,s30:0,active30:0});
+  const byDay={}; USAGE.forEach(u=>Object.entries(JSON.parse(u.days||'{}')).forEach(([k,v])=>byDay[k]=(byDay[k]||0)+v));
+  const days=[...Array(30)].map((_,i)=>new Date(now-(29-i)*864e5).toISOString().slice(0,10)), mx=Math.max(1,...days.map(k=>byDay[k]||0));
+  return `<section><h3>Usage</h3><div class="stats us">
+    <div><b>${t.users}</b><span>people</span></div><div><b>${t.active30}</b><span>active, last 30 days</span></div><div><b>${t.sessions}</b><span>sessions</span></div>
+    <div><b>${t.boms}</b><span>BoM downloads</span></div><div><b>${t.packages}</b><span>validation packages</span></div></div>
+    <div class="spark" role="img" aria-label="Sessions per day, last 30 days">${days.map(k=>`<i style="height:${Math.round((byDay[k]||0)/mx*100)}%" title="${k}: ${byDay[k]||0}"></i>`).join('')}</div>
+    <p class="mut small">Sessions per day, last 30 days. Counted per signed-in person; no design content is stored for usage.</p></section>`;
+}
+// ---------- team panel ----------
+const STATUSES=['New','Viewed','In review','Validated','Closed'];
+let OPEN=new Set(), RFILTER='all';
+const allReqs=()=>REQS.flatMap(d=>d.items.map(i=>({...i,uid:d.uid}))).sort((a,b)=>b.at.localeCompare(a.at));
+const isNew=r=>!r.viewedAt&&(r.status||'New')==='New';
+function reqDetail(r){ let P={}; try{ P=JSON.parse(r.design).project||{}; }catch(e){}
+  const row=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:'';
+  return `<dl class="rdet">${row('Email',`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`)}${row('Request ID',esc(r.rid))}${row('Notes',esc(r.notes||'').replace(/\n/g,'<br>'))}
+    ${row('Attachments',(r.attachments||[]).map(esc).join(', '))}${row('Region',esc(P.region||''))}${row('TAA',P.taa?'Yes':'No')}
+    ${row('Redundant power',P.psuRed?(P.psuScope==='mdf'?'Main equipment room only':'All switches'):'No')}${row('Redundant core',P.dualCore?'Yes':'No')}
+    ${row('Switch series',P.family&&P.family!=='Auto'?esc(P.family)+' only':'Best fit')}${row('Catalog',esc(r.catalog||''))}${row('Viewed',r.viewedAt?new Date(r.viewedAt).toLocaleString():'')}</dl>`; }
+function adminPage(){
+  const all=allReqs(), nNew=all.filter(isNew).length;
+  const reqs=all.filter(r=>RFILTER==='all'||(RFILTER==='new'?isNew(r):!isNew(r)));
+  const act=(a,r,label)=>`<button class="ghost small" data-act="${a}" data-u="${esc(r.uid)}" data-r="${esc(r.rid)}">${label}</button>`;
+  return `<div class="adminhead"><div><h2>Admin</h2><p class="mut">Validation requests, usage and catalog. This page will move to the hosted site behind a login.</p></div><a class="ghost" href="#">Back to the BoM builder</a></div>
+  <div class="team">
+  <section><div class="rbar"><h3>Validation requests ${nNew?`<span class="badge">${nNew} new</span>`:''}</h3>
+    <div class="seg small">${[['all',`All (${all.length})`],['new',`New (${nNew})`],['viewed',`Viewed (${all.length-nNew})`]].map(([v,l])=>`<label><input type="radio" name="rfilter" data-rfilter="${v}"${RFILTER===v?' checked':''}><span>${l}</span></label>`).join('')}</div>
+    ${nNew?'<button class="ghost small" data-act="viewall">Mark all as viewed</button>':''}</div>
+  ${!DB?'<p class="mut">Requests appear here when the tool runs with shared storage.</p>':!reqs.length?'<p class="mut">No requests here.</p>':`<div class="scroll"><table class="t reqs"><thead><tr><th></th><th>Received</th><th>Project</th><th>Name</th><th>Company</th><th class="r">Devices</th><th class="r">Switches</th><th>Status</th><th></th></tr></thead><tbody>${
+    reqs.map(r=>{ const n=isNew(r), o=OPEN.has(r.rid); return `<tr class="${n?'unread':''}"><td>${n?'<span class="dot" title="New"></span>':''}</td><td>${new Date(r.at).toLocaleString()}</td><td>${esc(r.project)}</td><td>${esc(r.name||'')}</td><td>${esc(r.company||'')}</td><td class="r">${fmt(r.devices)}</td><td class="r">${fmt(r.switches)}</td>
+      <td><select data-rstat="${esc(r.uid)}|${esc(r.rid)}" aria-label="Status">${STATUSES.map(s=>`<option${s===(r.status||'New')?' selected':''}>${s}</option>`).join('')}</select></td>
+      <td class="acts">${act('viewreq',r,o?'Hide':'View')}${r.pkg?act('dlpkg',r,'Download ZIP'):'<span class="mut small">No ZIP</span>'}${act('openreq',r,'Open design')}</td></tr>
+      ${o?`<tr class="sub"><td></td><td colspan="8">${reqDetail(r)}</td></tr>`:''}`; }).join('')}</tbody></table></div>`}
+  </section>
+  ${usagePanel()}
+  <details class="catsec"${staged?' open':''}><summary>Catalog: <b>${esc(CATMETA.version)}</b> (${esc(CATMETA.source)}${CATMETA.publishedAt?`, published ${new Date(CATMETA.publishedAt).toLocaleDateString()}`:''})</summary>
+    <p class="mut">To update hardware, edit NETGEAR_BoM_Catalog.xlsx, bump Catalog_Version in Tool_Settings, then publish it here. It's checked before anyone sees it.</p>
+    ${staged?stagedView():`<button class="btn" data-act="pickcat">Choose updated catalog (.xlsx)</button>${CATMETA.source!=='Built-in catalog'?' <button class="ghost" data-act="revert">Preview built-in catalog</button>':''}`}
+    ${DB?'':'<p class="err">Shared storage isn\'t available in this view, so a catalog loaded here applies to this session only.</p>'}</details>
+  </div>`;
+}
+async function markViewed(pairs){ if(!pairs.length) return; const now=new Date().toISOString(), byU={};
+  pairs.forEach(([u,r])=>(byU[u]=byU[u]||new Set()).add(r));
+  for(const [u,set] of Object.entries(byU)){
+    const loc=REQS.find(x=>x.uid===u); if(loc) loc.items.forEach(i=>{ if(set.has(i.rid)&&!i.viewedAt){ i.viewedAt=now; if((i.status||'New')==='New') i.status='Viewed'; } });
+    if(DB){ try{ const ref=DB.doc('requests/'+u), d=await ref.get(); if(!d.exists) continue; const items=JSON.parse(d.data().items||'[]');
+      items.forEach(i=>{ if(set.has(i.rid)&&!i.viewedAt){ i.viewedAt=now; if((i.status||'New')==='New') i.status='Viewed'; } }); await ref.update({items:JSON.stringify(items)}); }catch(e){ toast('Could not save viewed status.'); } }
+  }
+  renderAdmin(); adminBadge(); }
+function adminBadge(){ const n=allReqs().filter(isNew).length; $('#adminlink').innerHTML=`Admin page${n?` <span class="badge">${n}</span>`:''}`; }
+function stagedView(){ const v=staged.issues, errsN=v.filter(i=>i.lvl==='error').length;
+  const oldIds=new Set(CAT.Products.map(p=>p.Product_ID)), newIds=new Set(staged.cat.Products.map(p=>p.Product_ID));
+  const added=[...newIds].filter(x=>!oldIds.has(x)), removed=[...oldIds].filter(x=>!newIds.has(x));
+  return `<div class="staged"><p><b>${esc(staged.name)}</b>: catalog ${esc(ENG.settings(staged.cat).Catalog_Version||'(no version)')}, ${staged.cat.Products.length} products, ${staged.cat.Accessories.length} accessories, ${staged.cat.Port_Types.length} port types.</p>
+    <p>${added.length?`New: ${esc(added.join(', '))}. `:''}${removed.length?`Removed: ${esc(removed.join(', '))}.`:''}${!added.length&&!removed.length?'Same product list; values may have changed.':''}</p>
+    ${v.length?`<ul class="notes">${v.map(i=>`<li class="${i.lvl==='error'?'warn':''}"><span>${i.lvl==='error'?'!':'i'}</span>${esc(i.msg)}</li>`).join('')}</ul>`:'<p>All checks passed.</p>'}
+    <button class="btn" data-act="publishcat"${errsN?' disabled':''}>${errsN?'Fix errors before publishing':(DB?'Publish to everyone':'Use for this session')}</button> <button class="ghost" data-act="discard">Discard</button></div>`; }
+document.addEventListener('change',async ev=>{ const t=ev.target; if(t.dataset&&t.dataset.rfilter){ RFILTER=t.dataset.rfilter; return renderAdmin(); } if(!t.dataset.rstat) return; const [u,r]=t.dataset.rstat.split('|');
+  try{ const ref=DB.doc('requests/'+u), d=await ref.get(); const items=JSON.parse(d.data().items); const it=items.find(i=>i.rid===r); if(it){ it.status=t.value; if(!it.viewedAt) it.viewedAt=new Date().toISOString(); } const li=(REQS.find(x=>x.uid===u)||{items:[]}).items.find(i=>i.rid===r); if(li){ li.status=t.value; li.viewedAt=li.viewedAt||new Date().toISOString(); } adminBadge(); await ref.update({items:JSON.stringify(items)}); toast('Status updated.'); }catch(e){ toast('Could not update status.'); } });
+function openReq(u,r){ const d=REQS.find(x=>x.uid===u); const it=d&&d.items.find(i=>i.rid===r); if(!it) return; try{ state=JSON.parse(it.design); state.project={...DEFAULT().project,...state.project}; tab='diagram'; location.hash=''; run(); toast(`Opened ${it.project}.`); }catch(e){ toast('That design could not be opened.'); } }
+function readSheet(wb,name){ const ws=wb.Sheets[name]; if(!ws) return []; return XLSX.utils.sheet_to_json(ws,{range:3,defval:null}).filter(r=>Object.values(r)[0]!==null).map(r=>Object.fromEntries(Object.entries(r).filter(([k,v])=>v!==null&&!/^__EMPTY/.test(k)))); }
+$('#fcat').addEventListener('change',async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+  if(!window.XLSX){ toast('Spreadsheet library did not load.'); return; }
+  try{ const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}); const nc={};
+    for(const n of ['Products','SKUs','Accessories','Compatibility','PSU_PoE_Matrix','Design_Rules','Endpoints','Port_Types','Tool_Settings']) nc[n]=readSheet(wb,n);
+    const pcols=[...new Set(nc.Products.flatMap(p=>Object.keys(p)).filter(k=>/^Ports_/.test(k)))];
+    nc.Products.forEach(p=>{ if(typeof p.Total_Ports!=='number') p.Total_Ports=pcols.reduce((s,k)=>s+(+p[k]||0),0); });
+    nc.PSU_PoE_Matrix.forEach(r=>{ if(typeof r.PoE_Budget_Protected_W!=='number'){ const a=[r.PoE_If_Internal_PSU_Fails_W,r.PoE_If_One_Module_Fails_W].filter(v=>typeof v==='number'); if(a.length) r.PoE_Budget_Protected_W=Math.min(...a); else delete r.PoE_Budget_Protected_W; } });
+    staged={cat:nc,name:f.name,issues:ENG.validate(nc)}; renderAdmin();
+  }catch(e){ toast('Could not read that workbook: '+e.message); } });
+async function publishCatalog(){ if(!staged) return; const nc=staged.cat, ver=String(ENG.settings(nc).Catalog_Version||new Date().toISOString().slice(0,10));
+  if(!DB){ applyCatalog(nc,{version:ver,source:staged.name+' (this session)'}); staged=null; run(); toast('Catalog applied for this session.'); return; }
+  try{ const json=JSON.stringify(nc), size=180000, parts=Math.ceil(json.length/size);
+    for(let i=0;i<parts;i++) await DB.doc('catalog/c'+i).set({part:json.slice(i*size,(i+1)*size)});
+    await DB.doc('catalog/meta').set({version:ver,parts,fileName:staged.name,publishedAt:new Date().toISOString(),products:nc.Products.length});
+    staged=null; toast(`Catalog ${ver} published to everyone.`);
+  }catch(e){ toast('Publish failed: '+(e.code||e.message)); } }
+function applyCatalog(nc,meta){ CAT=nc; CATMETA=meta; const ids=new Set(state.endpoints.map(e=>e.Endpoint_ID)); (nc.Endpoints||[]).forEach(e=>{ const i=state.endpoints.findIndex(x=>x.Endpoint_ID===e.Endpoint_ID); if(i>=0) state.endpoints[i]={...e}; else state.endpoints.push({...e}); }); catInfo(); }
+
+// ---------- files ----------
+const slug=()=>String(state.project.name||'netgear-av-project').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'project';
+// Standard browser download helper.
+function browserDownload(name,data){ const blob=data instanceof Blob?data:new Blob([data],{type:'text/plain'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Saved '+name); }
+async function saveFile(name,data){
+  try{ browserDownload(name,data); }
+  catch(e){ console.error('Download failed',e); toast('Could not save the file.'); }
+}
+const discRow=()=>[['ESTIMATE ONLY: '+(result.settings.Disclaimer||'')],['Validation: '+(result.settings.Validation_Contact_Email||'')],['Catalog version: '+CATMETA.version],[]];
+function exportCsv(){ const rows=[...discRow(),['Category','Part number','Description','Qty','Where'],...rollup().map(r=>[r.cat,r.sku,r.desc,r.qty,[...r.locs].join('; ')])];
+  track('bom'); saveFile(`${slug()}-bom.csv`,rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n')); }
+function exportSvg(){ saveFile(`${slug()}-network.svg`,diagram(true)); track('diagram'); }
+function buildXlsx(){ if(!window.XLSX){ toast('Spreadsheet library did not load.'); return null; }
+  const wb=XLSX.utils.book_new(), P=state.project;
+  const info=[...discRow(),['Project',P.name],['Created',new Date().toISOString().slice(0,10)],['Region',P.region],['TAA required',P.taa?'Yes':'No'],['Redundant power',P.psuRed?(P.psuScope==='mdf'?'Main equipment room only':'All switches'):'No'],['Redundant core',P.dualCore?'Yes':'No'],['Design basis',P.basis==='line'?'Line-rate':'Stream'],['Oversubscription',P.oversub+':1'],['Mains voltage',P.voltage],[],['Room','Type','Device','Qty','Link Gbps','Media','PoE W']];
+  state.locations.forEach(L=>L.eps.forEach(e=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep)||{}; info.push([L.name,L.type,ep.Name,e.qty,ep.Link_Speed_Gbps,ep.Media,ep.PoE_W]); }));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),'Project');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([...discRow(),['Category','Part number','Description','Qty','Where','Notes'],...rollup().map(r=>[r.cat,r.sku,r.desc,r.qty,[...r.locs].join('; '),r.note])]),'BoM');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Room','Category','Part number','Description','Qty'],...result.bom.map(b=>[b.loc,b.cat,b.sku,b.desc,b.qty])]),'BoM by room');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Room','Device','Qty','PoE load each W','Power supplies','PoE available W','Headroom %','Est draw each W','Datasheet max each W'],...result.power.map(p=>[p.loc,p.model,p.n,Math.round(p.poe),p.cfg,p.budget,p.head===null?'':Math.round(p.head*100),Math.round(p.est),p.max])]),'Power');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Level','Message'],...result.errors.map(e=>['error',e.loc+': '+e.msg]),...result.notes.map(n=>[n.lvl,n.msg])]),'Checks');
+  return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})]); }
+function exportXlsx(){ const b=buildXlsx(); if(b){ saveFile(`${slug()}-bom.xlsx`,b); track('bom'); } }
+$('#fjson').addEventListener('change',async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+  try{ const s=JSON.parse(await f.text()); if(!s.project||!s.locations) throw new Error('not a project file'); state=s; state.project={...DEFAULT().project,...s.project}; run(); toast('Project opened.'); }catch(e){ toast('Could not open that file: '+e.message); } });
+function catInfo(){ $('#catinfo').textContent=`Catalog ${CATMETA.version}`; }
+let tt; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),3500); }
+
+// ---------- browser initialization ----------
+// This build is platform-independent: project state is stored locally and files
+// are downloaded with standard browser APIs. Shared backend/admin services can
+// be connected later without changing the BoM engine.
+$('#adminlink').hidden=true;
+route();
+renderResults();
+$('#logo-d').src=LOGO_DARK; $('#logo-l').src=LOGO_LIGHT;
+document.body.dataset.view=view; catInfo(); run();
