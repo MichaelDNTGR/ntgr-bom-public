@@ -4,6 +4,8 @@
 
 The BoM builder turns a list of AV devices per room into a NETGEAR switch design: switches, uplinks, core, power supplies, optics, a bill of materials, a network diagram and a power plan. It is a budgetary estimate; **advised sending the design to the ProAV Design team for further validation**.
 
+For the full decision logic with flowcharts, see [How the BoM builder reaches its design](docs/design-logic.md).
+
 ## What the user enters
 
 - **Rooms:** one main equipment room (MDF, holds the core) and any number of closets (IDF), each with fiber distance and type (multimode or single mode).
