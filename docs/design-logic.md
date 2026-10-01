@@ -14,12 +14,10 @@ flowchart TD
     E -- No --> F
     C -- No --> F["2b. Size each room's switches<br/>including uplinks to the core"]
     F --> G["3. Size the core<br/>terminate every uplink, gateway, core-to-core link"]
-    G --> H{"Core found?"}
-    H -- Yes --> J["4. Build the BoM<br/>switches, PSUs, optics, cables, support, gateway"]
-    H -- No --> I["Retry whole design with faster uplinks<br/>25G / 100G, fewer core ports"]
-    I --> G2{"Core found now?"}
-    G2 -- Yes --> J
-    G2 -- No --> X["Show error: needs aggregation layer<br/>contact ProAV Design"]
+    G --> I["Repeat 2b-3 with slowest, fewest and fastest uplinks<br/>then try each room's close alternatives"]
+    I --> H{"Any complete design?"}
+    H -- Yes --> J["4. Keep the lowest total score, build the BoM<br/>switches, PSUs, optics, cables, support, gateway"]
+    H -- No --> X["Show error: needs aggregation layer<br/>contact ProAV Design"]
     S --> J
     J --> K["5. Power plan, checks and diagram"]
 ```
@@ -82,6 +80,8 @@ flowchart TD
 ```
 
 - LAG sizes are powers of two so link aggregation hashing spreads traffic evenly. Sizes come from `Tool_Settings` (`Uplink_LAG_Sizes`, `Max_LAG_Members`).
+- Uplinks are never slower than `Min_Uplink_Gbps` (default 10). Small rooms, for example audio only on stream bandwidth, would otherwise get 1G uplinks with no headroom. Set it to 1 to allow 1G uplinks.
+- Speeds with a catalog optic always come before speeds that would need a placeholder. If every speed needs a placeholder (for example 25G at 150 m multimode, where 25G SR reaches 100 m), the engine also tries one to three more switches at a lower speed. A placeholder costs more than an extra switch, so an orderable design wins.
 - With a redundant core, each link group must carry the switch's full load on its own, so either core can fail.
 
 ### Power supply check
@@ -97,6 +97,18 @@ The engine reads the `PSU_PoE_Matrix` rows for that switch that match the mains 
 
 Redundant power applies to **all switches**, or to the **main equipment room only** (main room switches and the core). It always applies to the core when it is on, with one or two cores.
 
+### Timing requirements (PTP and AVB)
+
+Each device type can carry a `Timing` value in the Endpoints sheet:
+
+| Timing | Rule |
+|---|---|
+| blank | Any switch. Every model supports PTPv2 transparent clock, which is enough for Dante. |
+| `PTP-BC` | The device's switch and the core must have a PTP boundary clock (M4350-8M2V, 24M4X4V, 24F4X, 16V4C, 40X4C, 40F4C). Used for ST 2110 (SMPTE 2059-2). |
+| `AVB` | The switch must support AVB. M4250 does not run AVB over a LAG, so an M4250 with AVB devices gets one uplink per core. A room that needs more than one link moves to M4350 or more M4250 units. |
+
+Devices without a timing need still go to the cheapest switch: in a mixed room, a split puts them on M4250 while the timing devices get an M4350.
+
 ### Scoring: "best fit"
 
 - **With list prices in the catalog:** the score is the price, plus the cost of PSU modules.
@@ -104,7 +116,7 @@ Redundant power applies to **all switches**, or to the **main equipment room onl
 
   `10 + 0.35 × ports + fabric Gbps ÷ 150 + max PoE W ÷ 150 + 6 (if M4350) + PSU module cost`
 
-  plus 4 per copper RJ45 module, and 8 if an uplink optic is not in the catalog. The total is multiplied by the number of units.
+  plus 4 per copper RJ45 module, 0.4 + speed ÷ 40 per uplink (two optics and a fiber pair), and 40 if an uplink optic is not in the catalog. The total is multiplied by the number of units.
 
 This favors the smallest switch that passes all checks, and M4250 over M4350 when both fit.
 
@@ -148,7 +160,13 @@ Core-to-core link sizing (Design options):
 
 Example: four closets of 40 Gbps each, half rule = 80 Gbps, which becomes 4 × 25G = 100 Gbps.
 
-If no core fits, the engine reruns the whole design with room uplinks on the **fastest** speeds first (25G, 100G). That uses fewer core ports. If that still fails, it shows an error suggesting 2:1 oversubscription, Best fit, or an aggregation layer.
+### Choosing the whole design
+
+Room switches and the core are scored together, because a room's cheapest switch can force a bigger core.
+
+1. The whole design is built three times, with room uplinks on the **slowest** speed that fits, the **fewest** links, and the **fastest** speed. The design with the lowest total score (rooms + core + uplinks) wins. A faster option must be clearly cheaper, so near-ties keep the slower uplinks.
+2. For each room with one switch group, the engine then tries the room's next three "Also fits" switches on the whole design, and keeps any that lowers the total. Example: an M4350-36X4V on 4 × 25G scores lower for the room alone, but it needs an M4350-16V4C core. The M4350-24X8F8V on 8 × 10G lets the smaller M4350-24F4V terminate everything, so the whole design wins.
+3. If no strategy finds a core, the engine shows an error suggesting 2:1 oversubscription, Best fit, or an aggregation layer.
 
 ## 4. Building the BoM
 
@@ -156,7 +174,7 @@ If no core fits, the engine reruns the whole design with room uplinks on the **f
 |---|---|
 | Switches | Orderable SKU for the region (or the TAA SKU when TAA is on). |
 | PSU modules | From the chosen PSU configuration, with the power cord for the region. |
-| Uplink optics | Links in the main room up to 20 m (`In_Rack_Max_m`) use a DAC or AOC cable, 1 per link. Longer links use an optic for the speed, fiber type and distance, shortest reach that covers it, 2 per link (both ends). Missing items appear as `TBD` placeholders with a warning. |
+| Uplink optics | Links in the main room up to 20 m (`In_Rack_Max_m`) use a DAC or AOC cable, 1 per link. Longer links use an optic for the speed, fiber type and distance, shortest reach that covers it, 2 per link (both ends). LRM and PSM4 (8-fiber MPO trunk) are used only when nothing else reaches. 25G/100G parts are optic.ca modules validated in NETGEAR KB 000066694. Missing items appear as `TBD` placeholders with a warning. Breakout cables are in the catalog but not used yet. |
 | Fiber endpoints | One switch-side optic per fiber device. |
 | Copper modules | One AGM734 / AXM765 per copper device on a fiber port, never for spare ports. |
 | Core | Core switches, PSU modules, core-to-core DAC cables. |
@@ -180,10 +198,14 @@ If no core fits, the engine reruns the whole design with room uplinks on the **f
 | 8 × touch panels, redundant power on | M4350-24G4XF + APS600W | M4250 10-port models have one fixed PSU. The 8M2V has redundant PSUs but only 8 copper ports, and 9 are needed with spare. |
 | Two closets + router, redundant core and power | 2 × M4350-24F4V core | Each core needs 5 × 10G (2 uplinks, 2 core-to-core, 1 router). The 24F4X has only 4. Fixed-PSU models (8X8F, 12X12F, 16XF) are excluded by redundant power. |
 | Three closets + router, single core, 10G uplinks | M4350-24F4V core | The 24F4X has exactly the 4 × 10G ports needed, but its 24 × 1/2.5G ports are wasted at 10G, so it scores worse. |
-| Audio-only closets, stream bandwidth, 1G uplinks | M4350-24F4X core | Its 1/2.5G SFP ports carry the 1G uplinks, so none are wasted. |
+| Audio-only closets, stream bandwidth, `Min_Uplink_Gbps` = 1 | M4350-24F4X core | Its 1/2.5G SFP ports carry the 1G uplinks, so none are wasted. With the default of 10, uplinks are 10G and the core is a 10G model. |
+| Closets of 90G, 80G and 8G, single core | 4 × 25G, 8 × 10G, 1 × 10G; M4350-24F4V core | The 80G closet stays on 10G because 25G there would need a bigger core. |
+| 90G closet at 150 m multimode | 2 switches, 8 × 10G each | 25G SR reaches 100 m, so splitting at 10G avoids a placeholder optic. |
+| ST 2110 devices (`PTP-BC`) + 1G encoders | M4350-16V4C for the 2110 devices, M4250 for the encoders, BC-capable core | Only the timing devices need a boundary clock. |
 
 ## Known limits
 
-- No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest.
+- No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest. The scores for switches, cores and links are estimates; adding `List_Price_USD` to Products (and prices for optics) makes every comparison above a real cost comparison.
+- Breakout cables (QSFP28 to 4 × SFP28) are not used yet, and the M4500 is not in the catalog.
 - With a redundant core, one 10G port for the gateway is reserved on each core, but the BoM includes one gateway cable.
 - No aggregation (spine/leaf) layer: very large networks must be designed by the ProAV Design team.

@@ -11,6 +11,14 @@ function portTypes(cat){
 }
 const supports=(t,s)=>t.speeds.some(x=>Math.abs(x-s)<EPS);
 const isTAA = p => /^Yes/i.test(String(p.TAA_SKU||''));
+// timing a device type needs from its switch (Endpoints.Timing): PTP boundary clock, or AVB
+const hasBC = p => /boundary/i.test(String(p.PTP||''));
+const hasAVB = p => /^yes/i.test(String(p.AVB||''));
+const avbNoLag = p => /not on LAG/i.test(String(p.AVB||''));
+function timingOk(p,D){ return (!D.needBC||hasBC(p)) && (!D.needAVB||hasAVB(p)); }
+// relative cost of one uplink (two optics plus a fiber pair) when the catalog has no prices
+const linkCost = s => 0.4 + s/40;
+const TBD_PENALTY = 40; // a part missing from the catalog makes the design unorderable: worth more than an extra switch
 function candidates(cat,S,role){
   return cat.Products.filter(p=>p.Category==='Switch' && (p.Lifecycle_Status||'Active')==='Active'
     && (!S.taa || isTAA(p)) && (S.family==='Auto' || p.Family===S.family));
@@ -70,6 +78,7 @@ function hasOptic(cat,speed,media,dist,inRack){ return !pickLink(cat,speed,media
 function evalN(cat,PT,p,D,n,S,ctx){
   const avail={}; PT.forEach(t=>avail[t.col]=N(p[t.col]));
   const classes=D.classes.map(c=>({...c,q:ceil(c.q/n)}));
+  if(!timingOk(p,D)) return null;
   const poeAt=ceil(D.poeAt/n), poeBt=ceil(D.poeBt/n), poePorts=N(p.PoE_Ports), std=String(p.PoE_Standard||'');
   if(poeBt>0 && !/bt/.test(std)) return null;
   if(poeAt+poeBt>0 && !/at|bt|af/.test(std)) return null;
@@ -82,28 +91,40 @@ function evalN(cat,PT,p,D,n,S,ctx){
   else {
     const bw=D.bw/n/S.oversub;
     const ups=PT.filter(t=>t.up&&rem[t.col]>0);
-    const speeds=[...new Set(ups.flatMap(t=>t.speeds))].filter(s=>s>=1).sort((a,b)=>S.upPref==='fast'?b-a:a-b);
-    let first=null;
+    const speeds=[...new Set(ups.flatMap(t=>t.speeds))].filter(s=>s>=Math.max(1,S.minUp||1));
+    // AVB on this switch does not run over a LAG, so each core gets a single link
+    const noLag=D.needAVB&&avbNoLag(p);
+    const fits=[];
     for(const s of speeds){
       const av=ups.filter(t=>supports(t,s)).reduce((a,t)=>a+rem[t.col],0);
       // redundant core: each core link group must carry the switch's full load on its own
       const need=Math.max(1,ceil(bw/s-EPS));
-      let u; if(S.dualCore){ const per=S.lagSizes.filter(x=>x<=S.maxLag).sort((a,b)=>a-b).find(x=>x>=need); u=per?per*2:0; }
+      let u; if(noLag) u=need===1?(S.dualCore?2:1):0;
+      else if(S.dualCore){ const per=S.lagSizes.filter(x=>x<=S.maxLag).sort((a,b)=>a-b).find(x=>x>=need); u=per?per*2:0; }
       else u=lagSizes(S).find(x=>x>=need);
-      if(u && u<=av){ const cand={speed:s,u}; if(!first) first=cand; if(hasOptic(cat,s,ctx.media,ctx.dist,ctx.inRack)){ up=cand; break; } }
+      if(u && u<=av) fits.push({speed:s,u,tbd:!hasOptic(cat,s,ctx.media,ctx.dist,ctx.inRack)});
     }
-    if(!up){ up=first; if(up) up={...up,tbd:true}; } if(!up) return null;
+    // strategy: slowest speed that fits (low), fewest links (fewest) or fastest speed (fast); speeds with a catalog optic first
+    const order={low:(a,b)=>a.speed-b.speed, fast:(a,b)=>b.speed-a.speed, fewest:(a,b)=>a.u-b.u||a.speed-b.speed}[S.upPref]||((a,b)=>a.speed-b.speed);
+    fits.sort((a,b)=>(a.tbd?1:0)-(b.tbd?1:0)||order(a,b));
+    up=fits[0]; if(!up) return null; if(!up.tbd) delete up.tbd;
   }
   const needW=D.poeW/n*(1+S.poeHead/100);
   const psu=psuPick(cat,p,needW,S); if(!psu) return null;
   // RJ45 SFP modules are a fallback: a switch with native copper ports should win whenever one fits
   const modCost=Object.values(A.mods).reduce((a,b)=>a+b,0)*4;
-  return {p,n,up,psu,mods:A.mods,poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?8:0)+(S.upPref==='fast'?up.u*0.5:0))};
+  return {p,n,up,psu,mods:A.mods,poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?TBD_PENALTY:0)+up.u*linkCost(up.speed))};
 }
 function bestFor(cat,PT,D,S,ctx,forced){
   const list=forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'access');
   let best=null; const alts=[];
-  for(const p of list){ for(let n=1;n<=48;n++){ const r=evalN(cat,PT,p,D,n,S,ctx); if(r){ alts.push(r); if(!best||r.score<best.score) best=r; break; } } }
+  const keep=r=>{ alts.push(r); if(!best||r.score<best.score) best=r; };
+  for(const p of list){ let tbd=null;
+    for(let n=1;n<=48;n++){ const r=evalN(cat,PT,p,D,n,S,ctx); if(!r) continue;
+      if(!r.up.tbd){ keep(r); tbd=null; break; }
+      // a placeholder optic (e.g. 25G beyond multimode reach) may be avoidable with more units at a lower speed
+      if(!tbd) tbd=r; else if(n>tbd.n+2) break; }
+    if(tbd) keep(tbd); }
   alts.sort((a,b)=>a.score-b.score);
   return best?{best,alts:alts.slice(0,4)}:null;
 }
@@ -115,6 +136,7 @@ function demandOf(items,S,noSpare){
     const spd=N(ep.Link_Speed_Gbps)||1, media=/fiber/i.test(ep.Media||'')?'Fiber':'Copper', w=N(ep.PoE_W);
     const poe=w>0; const k=media+spd+(poe?'P':''); (map[k]=map[k]||{media,speed:spd,poe,q:0}).q+=q;
     if(w>30) D.poeBt+=q; else if(w>0) D.poeAt+=q;
+    if(ep.Timing==='PTP-BC') D.needBC=true; if(ep.Timing==='AVB') D.needAVB=true;
     D.poeW+=w*q; D.count+=q; D.bw+= q*(S.basis==='stream'? N(ep.Stream_Mbps)/1000 : spd);
   }
   D.classes=Object.values(map).map(c=>({...c,q:ceil(c.q*sp)}));
@@ -158,7 +180,8 @@ function islRequired(dem,S){
   return Math.max(dem.maxSw,base)/(S.oversub||1);
 }
 function solveCore(cat,PT,dem,S,forced){
-  const list=forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'core').filter(p=>PT.some(t=>t.up&&t.media==='Fiber'&&N(p[t.col])>0));
+  const list=(forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'core').filter(p=>PT.some(t=>t.up&&t.media==='Fiber'&&N(p[t.col])>0)))
+    .filter(p=>timingOk(p,dem)&&!(dem.needAVB&&avbNoLag(p)&&dem.lagged));
   const cores=S.dualCore?2:1; let best=null, psuFail=false;
   const speeds=Object.keys(dem.links).map(Number).sort((a,b)=>b-a);
   for(const p of list){
@@ -204,7 +227,8 @@ function pickLink(cat,speed,media,dist,inRack){
     media='MMF';
   }
   const o=A.filter(a=>a.Category==='Optic'&&N(a.Speed_Gbps)===speed&&String(a.Media)===media&&N(a.Reach_m)>=dist&&!/pack/i.test(a.Description||''))
-    .sort((a,b)=>(/LRM/.test(a.Description)?1:0)-(/LRM/.test(b.Description)?1:0) || N(a.Reach_m)-N(b.Reach_m));
+    // LRM and PSM4 (8-fiber MPO trunk) only when nothing else reaches
+    .sort((a,b)=>(/LRM|PSM4/.test(a.Description)?1:0)-(/LRM|PSM4/.test(b.Description)?1:0) || N(a.Reach_m)-N(b.Reach_m));
   if(o.length) return {sku:o[0].Orderable_SKU,desc:o[0].Description,perLink:2,cat:'Optics'};
   return {sku:`TBD-${speed}G-${media}`,desc:`${speed}G ${media} transceiver, ${dist} m (not in catalog)`,perLink:2,cat:'Optics',tbd:true};
 }
@@ -234,17 +258,39 @@ function splitUnits(items,n,S){
   }
   return units;
 }
+// Build the whole design with each uplink strategy and keep the cheapest one that works, core included.
+const STRATEGIES=['low','fewest','fast'];
 function design(cat,state){
-  const r1=designOnce(cat,state,'low');
-  if(!r1.errors.some(e=>e.loc==='Core')) return r1;
-  const r2=designOnce(cat,state,'fast');
-  if(r2.errors.some(e=>e.loc==='Core')) return r1;
-  r2.notes.unshift({lvl:'info',msg:'Room switches were moved to faster uplinks (25G/40G/100G) so the core switches have enough ports to terminate every link.'});
-  return r2;
+  const runs=STRATEGIES.map(p=>({p,r:designOnce(cat,state,p)}));
+  const ok=runs.filter(x=>!x.r.errors.length);
+  if(!ok.length) return runs[0].r;
+  // a faster strategy must be clearly cheaper to replace the slower one, so near-ties keep the slower uplinks
+  const w=ok.reduce((b,x)=>x.r.score<b.r.score-0.5?x:b), low=runs[0].r;
+  if(w.p!=='low'){
+    if(low.errors.some(e=>e.loc==='Core')) w.r.notes.unshift({lvl:'info',msg:'Room switches were moved to faster uplinks (25G/40G/100G) so the core switches have enough ports to terminate every link.'});
+    else w.r.notes.unshift({lvl:'info',msg:'Faster uplinks (fewer links) give a smaller overall design than the slowest uplink speed, so they were used.'});
+  }
+  // A room's cheapest switch can force a bigger core. Try each room's close alternatives on the whole design
+  // and keep any that makes the total cheaper (one pass, rooms the user has not fixed, single switch group only).
+  let best=w.r, cur=state;
+  for(const L of state.locations){
+    if(L.override&&L.override!=='Auto') continue;
+    const nodes=best.accessNodes.filter(a=>a.loc===L.name); if(nodes.length!==1) continue;
+    for(const a of nodes[0].alts.filter(a=>a.pid!==nodes[0].pid).slice(0,3)){
+      const st={...cur,locations:cur.locations.map(x=>(x.id??x.name)===(L.id??L.name)?{...x,override:a.pid}:x)};
+      const r=designOnce(cat,st,w.p);
+      if(!r.errors.length&&r.score<best.score-0.5){ best=r; cur=st; }
+    }
+  }
+  if(best!==w.r){
+    // keep the "Also fits" list from the open search; a forced room only lists itself
+    best.accessNodes.forEach(a=>{ const o=w.r.accessNodes.find(x=>x.loc===a.loc); if(o) a.alts=o.alts; });
+    best.notes=[...w.r.notes.filter(n=>/faster uplinks/i.test(n.msg)),...best.notes.filter(n=>!/faster uplinks/i.test(n.msg))]; best.notes.unshift({lvl:'info',msg:'A different room switch was chosen where it allows a smaller core, so the whole design costs less.'}); }
+  best.strategy=w.p; return best;
 }
 function designOnce(cat,state,upPref){
   const S={...state.project,upPref}, T=settings(cat), PT=portTypes(cat);
-  S.maxLag=N(T.Max_LAG_Members)||8; S.lagSizes=String(T.Uplink_LAG_Sizes||'1,2,4,8').split(/[,; ]+/).map(Number).filter(x=>x>0); const inRackMax=N(T.In_Rack_Max_m)||20, eff=N(T.PSU_Efficiency)||0.9;
+  S.maxLag=N(T.Max_LAG_Members)||8; S.minUp=N(T.Min_Uplink_Gbps)||1; S.lagSizes=String(T.Uplink_LAG_Sizes||'1,2,4,8').split(/[,; ]+/).map(Number).filter(x=>x>0); const inRackMax=N(T.In_Rack_Max_m)||20, eff=N(T.PSU_Efficiency)||0.9;
   const supPat=T.Support_SKU_Pattern||'PMB03{years}{cat}-10000S', gwId=T.Gateway_Product_ID||'PR460X';
   const notes=[], bom=[], links=[], power=[];
   const epById=Object.fromEntries(state.endpoints.map(e=>[e.Endpoint_ID,e]));
@@ -265,19 +311,22 @@ function designOnce(cat,state,upPref){
   if(!res) res=locs.map(L=>({L,...solveLocation(cat,PT,L.items,SL(L),ctxFor(L,false),ovr(L))}));
   const units=countUnits(res);
   const errors=res.filter(r=>r.err).map(r=>({loc:r.L.name,msg:r.err}));
-  const coreDem={links:{},gw:S.gateway,total:0,maxSw:0}; const accessNodes=[];
+  const coreDem={links:{},gw:S.gateway,total:0,maxSw:0,needBC:false,needAVB:false,lagged:false}; const accessNodes=[];
+  let score=0;
   const support=(p,qty,loc)=>{ if(!S.support) return; const c=String(p.Support_Category||'').match(/(\d)/); if(!c) return; const sku=supPat.replace('{years}',S.support).replace('{cat}',c[1]); const a=cat.Accessories.find(x=>x.Orderable_SKU===sku); add(sku,a?a.Description:`Support ${S.support}-year`,qty,'Support',loc); };
   for(const r of res){
     const L=r.L, ctx=ctxFor(L,standalone);
     for(const g of r.groups){
-      const b=g.best, p=b.p;
+      const b=g.best, p=b.p; score+=b.score;
+      const Dg=demandOf(g.items,S,true); if(!standalone&&b.up.u>0){ coreDem.needBC=coreDem.needBC||!!Dg.needBC; coreDem.needAVB=coreDem.needAVB||!!Dg.needAVB; if(Dg.needAVB&&b.up.u/(S.dualCore?2:1)>1) coreDem.lagged=true; }
       add(regionSku(cat,p.Product_ID,S),`${p.Model_Name} switch`,b.n,'Switches',L.name);
       for(const m of b.psu.modules){ const a=psuSku(cat,m.base,S); add(a.Orderable_SKU,a.Description||m.base,m.qty*b.n,'Power',L.name,'PSU module'); }
       if(b.up.u>0){
         const lk=pickLink(cat,b.up.speed,ctx.inRack?'DAC':ctx.media,ctx.dist,ctx.inRack);
         coreDem.links[b.up.speed]=(coreDem.links[b.up.speed]||0)+b.up.u*b.n;
         add(lk.sku,lk.desc,b.up.u*b.n*lk.perLink,lk.cat,L.name,lk.tbd?'Not in catalog yet':(lk.perLink===2?'2 per link (both ends)':'1 per link'));
-        if(lk.tbd) notes.push({lvl:'warn',msg:`${L.name}: no ${b.up.speed}G ${ctx.inRack?'cable':'optic'} in the catalog for ${ctx.dist} m. Placeholder added.`});
+        if(lk.tbd){ const reach=Math.max(0,...cat.Accessories.filter(a=>a.Category==='Optic'&&N(a.Speed_Gbps)===b.up.speed&&String(a.Media)===ctx.media).map(a=>N(a.Reach_m)));
+          notes.push({lvl:'warn',msg:`${L.name}: no ${b.up.speed}G ${ctx.inRack?'cable':'optic'} in the catalog for ${ctx.dist} m. Placeholder added.`+(!ctx.inRack&&reach?` ${b.up.speed}G ${ctx.media} optics reach ${reach} m; use single-mode fiber (SMF) for this room or a shorter run.`:'')}); }
         links.push({loc:L.name,model:p.Model_Name,n:b.n,speed:b.up.speed,u:b.up.u,optic:lk.sku,dist:ctx.dist,media:ctx.inRack?'in-rack':ctx.media});
       }
       const D0=demandOf(g.items,S,true);
@@ -300,7 +349,7 @@ function designOnce(cat,state,upPref){
     const forcedCore=S.coreOverride&&S.coreOverride!=='Auto'?S.coreOverride:null;
     core=solveCore(cat,PT,coreDem,S,forcedCore);
     if(core&&core.fail==='psu'){ errors.push({loc:'Core',msg:`${forcedCore?cat.Products.find(p=>p.Product_ID===forcedCore).Model_Name+' has':'The core switches that fit have'} a single fixed power supply, so ${forcedCore?'it':'they'} cannot be used with redundant power on. Choose a core with a PSU module slot, or turn off redundant power.`}); core=null; }
-    else if(core){ const p=core.p, loc=mdfName+' (core)';
+    else if(core){ const p=core.p, loc=mdfName+' (core)'; score+=core.score;
       add(regionSku(cat,p.Product_ID,S),`${p.Model_Name} core switch`,core.k,'Switches',loc);
       for(const m of core.psu.modules){ const a=psuSku(cat,m.base,S); add(a.Orderable_SKU,a.Description,m.qty*core.k,'Power',loc,'PSU module (redundancy)'); }
       if(core.isl){ const lk=pickLink(cat,core.islSpeed,'DAC',1,true); add(lk.sku,lk.desc,core.isl*lk.perLink,'Cabling',loc,`Inter-core links (${core.isl} × ${core.islSpeed}G)`);
@@ -314,6 +363,8 @@ function designOnce(cat,state,upPref){
       if(!standalone){ const lk=pickLink(cat,10,'DAC',3,true); add(lk.sku,lk.desc,1,'Cabling',mdfName,'Gateway to core'); }
       if(S.taa && !isTAA(gw)) notes.push({lvl:'warn',msg:`${gw.Model_Name} has no TAA-compliant SKU in the catalog.`});
       power.push({loc:mdfName,model:gw.Model_Name,n:1,poe:0,cfg:'Internal PSU',eps:null,prot:null,budget:null,head:null,est:156,max:156,ru:N(gw.Rack_Units)||1,half:false}); } }
+  if(coreDem.needBC||locs.some(L=>L.items.some(i=>i.ep.Timing==='PTP-BC'&&N(i.qty)))) notes.push({lvl:'info',msg:'Some devices need a PTP boundary clock (e.g. SMPTE 2059-2 / AES67), so only switches with PTP boundary clock were used for them and for the core.'});
+  if(locs.some(L=>L.items.some(i=>i.ep.Timing==='AVB'&&N(i.qty)))) notes.push({lvl:'info',msg:'AVB / Milan devices: only AVB-capable switches were used. M4250 does not run AVB over a LAG, so M4250 switches with AVB devices get one uplink per core.'});
   if(S.taa) notes.push({lvl:'info',msg:'TAA: only switches with TAA-compliant SKUs were considered. TAA status of PSUs, optics and cables must be confirmed.'});
   if(locs.some(L=>L.items.some(i=>N(i.ep.PoE_W)>30&&N(i.qty)))) notes.push({lvl:'info',msg:'Devices above 30W need Ultra90 PoE++ (802.3bt) ports; only those switches were considered for them.'});
   notes.push({lvl:'info',msg:'Switches interconnect with LAG uplinks and IGMP Plus (no stacking), which keeps AVB and PTP available.'});
@@ -323,7 +374,7 @@ function designOnce(cat,state,upPref){
   if(S.psuRed) notes.push({lvl:'info',msg:'Redundant power: PoE is sized to the budget that remains if one power supply fails.'});
   for(const pw of power) if(pw.head!==null&&pw.head<0.1&&pw.poe>0) notes.push({lvl:'warn',msg:`${pw.loc}: ${pw.model} PoE headroom is only ${(pw.head*100).toFixed(0)}%.`});
   const totalEps=locs.reduce((s,L)=>s+L.items.reduce((a,i)=>a+N(i.qty),0),0);
-  return {dualCore:!!S.dualCore,bom,links,power,notes,errors,core,accessNodes,standalone,totalEps,settings:T};
+  return {dualCore:!!S.dualCore,bom,links,power,notes,errors,core,accessNodes,standalone,totalEps,settings:T,score};
 }
 // catalog validation used before publishing a new catalog
 function validate(cat){

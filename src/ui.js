@@ -14,6 +14,8 @@ const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',ta
 let state; try{ state=JSON.parse(localStorage.getItem('ntgr-bom-v2')||'null'); }catch(e){ state=null; }
 if(!state||!state.project||!state.locations) state=DEFAULT();
 state.project={...DEFAULT().project,...state.project};
+// a saved session keeps its own device library; pick up devices and fields added to the catalog since, without overwriting edits
+CAT.Endpoints.forEach(e=>{ const i=state.endpoints.findIndex(x=>x.Endpoint_ID===e.Endpoint_ID); if(i>=0) state.endpoints[i]={...e,...state.endpoints[i]}; else state.endpoints.push({...e}); });
 let result=null, tab='diagram', view='customer', canTeam=false, advOpen=false, libOpen=false;
 // Optional shared-backend hooks. They remain null in the standalone browser build.
 let DB=null, UID=null, REQS=[], staged=null;
@@ -78,11 +80,12 @@ function renderInputs(){
         ${team()&&n.alts.length>1?`<p class="alts">Also fits: ${n.alts.filter(a=>a.pid!==n.pid).slice(0,3).map(a=>`<button class="chip" data-act="use" data-pid="${esc(a.pid)}">${esc(a.name)} × ${a.n}</button>`).join('')}</p>`:''}`).join('')}</div>`:''}
     </section>`;}).join('');
   $('#libwrap').hidden=!team();
-  $('#lib').innerHTML=team()&&libOpen?`<div class="libt"><div class="lr lh"><span>Device</span><span>Link</span><span>Media</span><span>PoE W</span><span>Mb/s</span><span></span></div>
+  $('#lib').innerHTML=team()&&libOpen?`<div class="libt"><div class="lr lh"><span>Device</span><span>Link</span><span>Media</span><span>PoE W</span><span>Mb/s</span><span>Timing</span><span></span></div>
     ${state.endpoints.map((e,i)=>`<div class="lr" data-i="${i}"><input data-xf="Name" value="${esc(e.Name)}" aria-label="Device name">
       <select data-xf="Link_Speed_Gbps">${String(SET().Endpoint_Speeds_Gbps||'1,2.5,10,25').split(',').map(Number).map(v=>`<option value="${v}"${+e.Link_Speed_Gbps===v?' selected':''}>${v}G</option>`).join('')}</select>
       <select data-xf="Media">${['Copper','Fiber'].map(v=>`<option${e.Media===v?' selected':''}>${v}</option>`).join('')}</select>
       <input type="number" min="0" max="90" data-xf="PoE_W" value="${esc(e.PoE_W??0)}" aria-label="PoE watts"><input type="number" min="0" data-xf="Stream_Mbps" value="${esc(e.Stream_Mbps??'')}" aria-label="Stream Mbps">
+      <select data-xf="Timing" aria-label="Timing requirement">${[['','Any'],['PTP-BC','PTP BC'],['AVB','AVB']].map(([v,l])=>`<option value="${v}"${(e.Timing||'')===v?' selected':''}>${l}</option>`).join('')}</select>
       <button class="ghost x" data-act="delx" aria-label="Remove device type">×</button></div>`).join('')}
     <button class="ghost add" data-act="addx">Add device type</button><p class="mut small">Session-only. Make permanent changes in the Endpoints sheet and publish the catalog.</p></div>`:'';
   $('#libbtn').textContent=libOpen?'Hide device library':'Edit device library';
