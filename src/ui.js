@@ -196,7 +196,9 @@ function diagram(forExport){
     ns.forEach(n=>{ s+=text(x+14,yy+11,n.group,{a:'start',s:10,c:C.mut}); yy+=16;
       n.units.forEach(un=>{ sw++; const dc=result.dualCore&&core&&core.k>1, per=dc?n.up.u/2:n.up.u, h=unitH(un,n), cap=per*n.up.speed; tot+=un.bw; upCap+=cap;
         s+=box(x+12,yy,colW-24,h,C.bg,C.line)+text(x+22,yy+15,n.model,{a:'start',s:12,w:600})+text(x+colW-22,yy+15,`SW${sw}`,{a:'end',s:10.5,w:600,c:C.line});
-        const ports=Math.min(10,Math.max(4,Math.round((n.ports||24)/4))); for(let p=0;p<ports;p++) s+=`<rect x="${x+22+p*6}" y="${yy+20}" width="4" height="8" rx="1" fill="${C.line}" opacity="0.7"/>`;
+        // port usage gauge: devices + uplinks against the switch's total ports
+        const tp=n.ports||0, usedP=Math.min(tp,un.count+(n.up.u||0)), gw=110;
+        if(tp){ s+=`<rect x="${x+22}" y="${yy+21}" width="${gw}" height="6" rx="3" fill="${C.mut}" opacity="0.25"/><rect x="${x+22}" y="${yy+21}" width="${Math.max(3,gw*usedP/tp)}" height="6" rx="3" fill="${C.line}"/>`+text(x+22+gw+8,yy+27,`${usedP} of ${tp} ports used`,{a:'start',s:9.5,c:C.mut}); }
         let ly=yy+UH+10; un.eps.forEach(ep=>{ s+=text(x+22,ly,cut(`${ep.qty} × ${ep.name}`,29),{a:'start',s:10.5,c:C.mut})+text(x+colW-22,ly,gb(ep.bw),{a:'end',s:10.5,c:C.mut}); ly+=EL; });
         ly-=4; s+=`<line x1="${x+20}" y1="${ly}" x2="${x+colW-20}" y2="${ly}" stroke="${C.mut}" stroke-width="1" opacity="0.5"/>`;
         s+=text(x+22,ly+14,'Switch total',{a:'start',s:10.5,w:600})+text(x+colW-22,ly+14,gb(un.bw),{a:'end',s:10.5,w:700});
