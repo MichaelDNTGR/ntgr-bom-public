@@ -1047,12 +1047,7 @@ async function buildPdf(v={}){
   font('normal',8.5,INK); const dl=doc.splitTextToSize(dis,pw()-2*M-28), dh=dl.length*11.5+18;
   doc.setFillColor(...G1); doc.setDrawColor(...AVD); doc.setLineWidth(0.75); doc.roundedRect(M,y,pw()-2*M,dh,6,6,'FD'); doc.text(dl,M+14,y+17); y+=dh+12;
   if(result.errors.length) para(`${result.errors.length} issue${result.errors.length>1?'s':''} must be resolved before this design is complete. See Checks.`,{c:INFO});
-  y+=6; h3('Design settings');
-  const core=result.core, settings=[['Switch series',P.family==='Auto'?'Best fit':P.family+' only'],['Core',core?`${core.k} × ${core.p.Model_Name}${core.k>1?` (${core.isl} × ${core.islSpeed}G between cores)`:''}`:'None (single room)'],
-    ['Redundant core',P.dualCore?'Yes':'No'],['Redundant power',P.psuRed?(P.psuScope==='mdf'?'Main equipment room only':'All switches'):'No'],['Design basis',P.basis==='stream'?'Stream bandwidth':'Line-rate (non-blocking)'],['Oversubscription',P.oversub+':1'],
-    ['Spare ports',P.spare+'%'],['PoE headroom',P.poeHead+'%'],['Mains voltage',P.voltage+' V'],['Gateway',P.gateway?'PR460X Pro Router':'Not included'],['OnCall 24x7 support',P.support?P.support+(P.support>1?' years':' year'):'Not included'],['TAA required',P.taa?'Yes':'No']];
-  const half=Math.ceil(settings.length/2);
-  y=at({startY:y,body:settings.slice(0,half).map((r,i)=>[...r,...(settings[half+i]||['',''])]),columnStyles:{0:{textColor:MUT,cellWidth:90},2:{textColor:MUT,cellWidth:90}}})+22;
+  y+=6;
   h3('Rooms and devices');
   const rows=[]; state.locations.forEach(L=>{ const n=L.eps.reduce((a,e)=>a+(+e.qty||0),0);
     rows.push([{content:`${L.name}   ·   ${L.type==='MDF'?'MDF':`IDF, ${fmt(L.distance)} m ${L.media==='SMF'?'single mode':'multimode'} fiber`}   ·   ${n} devices`,colSpan:5,styles:{fontStyle:'bold',fillColor:G1}}]);
