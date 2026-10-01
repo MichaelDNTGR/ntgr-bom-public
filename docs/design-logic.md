@@ -80,7 +80,8 @@ flowchart TD
 ```
 
 - LAG sizes are powers of two so link aggregation hashing spreads traffic evenly. Sizes come from `Tool_Settings` (`Uplink_LAG_Sizes`, `Max_LAG_Members`).
-- Uplinks are never slower than `Min_Uplink_Gbps` (default 10). Small rooms, for example audio only on stream bandwidth, would otherwise get 1G uplinks with no headroom. Set it to 1 to allow 1G uplinks.
+- Uplinks are never slower than `Min_Uplink_Gbps` (default 1). Raise it to 10 to force 10G uplinks everywhere.
+- On **stream bandwidth**, uplinks must carry the room's stream total plus `Stream_Uplink_Headroom_Pct` (default 50%), because stream rates are typical, not peak. Line-rate is already worst case and gets no margin. Example: 7 Dante devices stream about 0.14 Gbps, plus 50% is 0.21 Gbps, so a 1G uplink fits and a 1G switch (M4250-9G1F) is chosen.
 - Speeds with a catalog optic always come before speeds that would need a placeholder. If every speed needs a placeholder (for example 25G at 150 m multimode, where 25G SR reaches 100 m), the engine also tries one to three more switches at a lower speed. A placeholder costs more than an extra switch, so an orderable design wins.
 - With a redundant core, each link group must carry the switch's full load on its own, so either core can fail.
 
@@ -160,6 +161,12 @@ Core-to-core link sizing (Design options):
 
 Example: four closets of 40 Gbps each, half rule = 80 Gbps, which becomes 4 × 25G = 100 Gbps.
 
+### Collapsed core
+
+When the main room has devices on a single switch, that switch can be the core: the other rooms' uplinks land on its free ports (after its own devices and spare ports), so no separate core switch is added. This applies with a single core (not with a redundant core), when no core model is forced, and when the switch meets the timing needs of the core (PTP boundary clock, AVB). If its free ports cannot take every closet link, a dedicated core is used as before. The diagram then shows the main room in the core position, with a "Core for" list.
+
+Example: 7 Dante devices in the main room and 7 in a closet, stream bandwidth: two M4250-9G1F switches, the closet on a 1G SFP uplink (AGM731F), the router on a free 1G copper port. Before, this needed a third switch (M4250-16XF) as the core.
+
 ### Choosing the whole design
 
 Room switches and the core are scored together, because a room's cheapest switch can force a bigger core.
@@ -178,7 +185,7 @@ Room switches and the core are scored together, because a room's cheapest switch
 | Fiber endpoints | One switch-side optic per fiber device. |
 | Copper modules | One AGM734 / AXM765 per copper device on a fiber port, never for spare ports. |
 | Core | Core switches, PSU modules, core-to-core DAC cables. |
-| Gateway | PR460X router, on a free 10G port of the core. The PR460X does not take DAC/AOC cables, so that link is a 10G SR optic (AXM761) on both ends, plus a multimode LC patch cord (not in the BoM). If the core has no free 10G port (for example an M4500-32C, 100G only), the router goes on a room switch, main room first, then the nearest closet: a free 10G copper port over Cat6a when the run is within `Copper_10G_Max_m` (100 m), otherwise a free 10G fiber port with optics both ends fit. SFP28 ports next to 25G uplinks are skipped (one speed per 4-port block). If no switch has a free port, the design shows a gateway error. |
+| Gateway | PR460X router, on a free 10G port of the core. The PR460X does not take DAC/AOC cables, so that link is a 10G SR optic (AXM761) on both ends, plus a multimode LC patch cord (not in the BoM). If the core has no free 10G port (for example an M4500-32C, 100G only), the router goes on a room switch, main room first, then the nearest closet: a free 10G copper port over Cat6a when the run is within `Copper_10G_Max_m` (100 m), otherwise a free 10G fiber port with optics both ends fit. SFP28 ports next to 25G uplinks are skipped (one speed per 4-port block). If no 10G port is free anywhere, the router link drops to 1G with a warning in Checks: a free 1G/2.5G copper port first (no parts), otherwise a 1G SX module (AGM731F) on both ends in a free SFP port, with a note to confirm the PR460X SFP+ port accepts 1G modules. If no switch has a free port, the design shows a gateway error. |
 | WiFi access points | NETGEAR APs in the device list are added as products. |
 | Support | OnCall support SKU per switch, by support category and years. |
 

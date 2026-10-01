@@ -24,7 +24,8 @@ For the full decision logic with flowcharts, see [How the BoM builder reaches it
 ## Bandwidth and uplinks
 
 - **Line-rate (default):** every device counts at its full link speed, so the design is non-blocking. Stream mode uses each device's typical stream bandwidth instead.
-- **Uplink groups use 1, 2, 4 or 8 links,** so link aggregation (LAG) hashing spreads traffic evenly. Uplinks are at least 10G (`Min_Uplink_Gbps`).
+- **Uplink groups use 1, 2, 4 or 8 links,** so link aggregation (LAG) hashing spreads traffic evenly. On stream bandwidth, uplinks keep a 50% margin over the stream total (`Stream_Uplink_Headroom_Pct`).
+- **Collapsed core:** a single main-room switch with enough free ports is also the core, so small designs need no extra core switch.
 - **The whole design is compared, core included:** slowest uplinks, fewest links and fastest uplinks are each tried, and so are each room's close alternative switches. The cheapest complete design wins, so a room is not moved to 25G when that would force a bigger core.
 - **Parts must fit both ends:** optics and cables are checked against the Compatibility sheet for the room switch and the core, so an M4500-only optic never lands on an M4350. The PR460X gateway takes no DAC, so it gets 10G SR optics.
 - **Timing needs per device type:** `PTP-BC` (boundary clock, e.g. ST 2110) and `AVB` (Milan) limit which switches and cores are used. Devices without a timing need still go on the cheapest switch, for example M4250 for Dante.
