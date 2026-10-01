@@ -173,7 +173,7 @@ body[data-page="admin"] #adminlink,body[data-page="admin"] #catinfo,body[data-pa
 <div class="disc" id="disc"></div>
 <div class="stats" id="stats"></div>
 <div class="bar"><div class="tabs" role="tablist"><button role="tab" data-tab="diagram">Network diagram</button><button role="tab" data-tab="bom">Bill of materials</button><button role="tab" data-tab="power">Power</button><button role="tab" data-tab="checks" id="tabchecks">Checks</button></div>
-<div class="acts"><button class="ghost dl" data-act="xlsx">Download BoM (.xlsx)</button><button class="ghost dl" data-act="csv">CSV</button><button class="ghost dl" data-act="svg">Diagram (.svg)</button></div></div>
+<div class="acts"><button class="ghost dl" data-act="xlsx">Download BoM (.xlsx)</button><button class="ghost dl" data-act="csv">CSV</button><button class="ghost dl" data-act="svg">Diagram (.svg)</button><button class="ghost dl" data-act="pdf">Report (.pdf)</button></div></div>
 <div id="out"></div>
 </section></main>
 <section id="adminpage" aria-live="polite"></section>
@@ -181,7 +181,7 @@ body[data-page="admin"] #adminlink,body[data-page="admin"] #catinfo,body[data-pa
 <input type="file" id="fcat" accept=".xlsx" hidden><input type="file" id="fjson" accept=".json,application/json" hidden>
 <div id="toast" role="status"></div>
 <script type="application/json" id="catalog">@@CATALOG@@</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>/*@@LOGOS@@*/</script>
 <script>/*@@ENGINE@@*/</script>
 <script>/*@@UI@@*/</script>

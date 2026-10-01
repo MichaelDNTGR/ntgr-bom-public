@@ -116,7 +116,8 @@ document.addEventListener('click',ev=>{
     case 'addx': state.endpoints.push({Endpoint_ID:'EP-CUSTOM-'+Date.now().toString(36),Name:'Custom device',Category:'Custom',Link_Speed_Gbps:1,Media:'Copper',PoE_W:0,Stream_Mbps:100}); break;
     case 'delx': { const i=+b.closest('.lr').dataset.i, id=state.endpoints[i].Endpoint_ID; if(state.locations.some(L=>L.eps.some(e=>e.ep===id))){ toast('That device type is used in a room. Remove it there first.'); return; } state.endpoints.splice(i,1); break; }
     case 'reset': if(!confirmReset()) return; state=DEFAULT(); break;
-    case 'xlsx': return exportXlsx(); case 'csv': return exportCsv(); case 'svg': return exportSvg();
+    case 'xlsx': return exportXlsx(); case 'csv': return exportCsv(); case 'svg': return exportSvg(); case 'pdf': return exportPdf();
+    case 'reqpdf': return reqPdf(b.dataset.u,b.dataset.r);
     case 'json': return saveFile(`${slug()}-project.json`,JSON.stringify(state,null,2));
     case 'loadjson': return $('#fjson').click();
     case 'request': return openModal();
@@ -143,6 +144,8 @@ let resetArmed=0; function confirmReset(){ if(Date.now()-resetArmed<4000) return
 const CATORDER=['Switches','Power','Optics','Cabling','Wireless','Gateway','Support'];
 function rollup(){ const m={}; for(const b of result.bom){ if(!m[b.sku]) m[b.sku]={...b,locs:new Set()}; else m[b.sku].qty+=b.qty; m[b.sku].locs.add(b.loc); }
   return Object.values(m).sort((a,b)=>CATORDER.indexOf(a.cat)-CATORDER.indexOf(b.cat)||a.sku.localeCompare(b.sku)); }
+function roomPower(l){ const V=state.project.voltage, r=result.power.filter(p=>p.loc===l); const w=r.reduce((s,p)=>s+p.est*p.n,0), mx=r.reduce((s,p)=>s+p.max*p.n,0), ru=r.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0);
+  const amps=w/V, cA=V>=200?16:20; return {w,mx,ru,amps,cA,circ:Math.max(1,Math.ceil(amps/(cA*0.8))),btu:w*3.412,va:w/0.9}; }
 function stats(){ return {sw:result.bom.filter(b=>b.cat==='Switches').reduce((s,b)=>s+b.qty,0),eps:result.totalEps,poe:result.power.reduce((s,p)=>s+p.poe*p.n,0),est:result.power.reduce((s,p)=>s+p.est*p.n,0),ru:result.power.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0)}; }
 function renderResults(){
   const s=stats(), T=result.settings;
@@ -158,9 +161,8 @@ function renderResults(){
       CATORDER.filter(c=>rows.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${team()?5:4}">${c}</td></tr>`+rows.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join('')}</tbody></table></div>
       <p class="cap">Part numbers are for ${esc(state.project.region)}${state.project.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.</p>`; }
   if(tab==='power'){ const P=state.project, locs=[...new Set(result.power.map(p=>p.loc))], eff=+T.PSU_Efficiency||0.9;
-    out.innerHTML=`<div class="closets">${locs.map(l=>{ const r=result.power.filter(p=>p.loc===l); const w=r.reduce((s,p)=>s+p.est*p.n,0), mx=r.reduce((s,p)=>s+p.max*p.n,0), ru=r.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0);
-        const amps=w/P.voltage, circ=Math.max(1,Math.ceil(amps/(P.voltage>=200?16*0.8:20*0.8)));
-        return `<div class="closet"><h4>${esc(l)}</h4><dl><dt>Estimated draw</dt><dd>${fmt(w)} W</dd><dt>Datasheet maximum</dt><dd>${fmt(mx)} W</dd><dt>Heat load</dt><dd>${fmt(w*3.412)} BTU/hr</dd><dt>Current at ${P.voltage} V</dt><dd>${fmt(amps,1)} A</dd><dt>Circuits</dt><dd>${circ} × ${P.voltage>=200?'16':'20'} A</dd><dt>UPS size</dt><dd>${fmt(w/0.9)} VA or more</dd><dt>Rack space</dt><dd>${fmt(ru,1)} U</dd></dl></div>`;}).join('')}</div>
+    out.innerHTML=`<div class="closets">${locs.map(l=>{ const r=roomPower(l);
+        return `<div class="closet"><h4>${esc(l)}</h4><dl><dt>Estimated draw</dt><dd>${fmt(r.w)} W</dd><dt>Datasheet maximum</dt><dd>${fmt(r.mx)} W</dd><dt>Heat load</dt><dd>${fmt(r.btu)} BTU/hr</dd><dt>Current at ${P.voltage} V</dt><dd>${fmt(r.amps,1)} A</dd><dt>Circuits</dt><dd>${r.circ} × ${r.cA} A</dd><dt>UPS size</dt><dd>${fmt(r.va)} VA or more</dd><dt>Rack space</dt><dd>${fmt(r.ru,1)} U</dd></dl></div>`;}).join('')}</div>
       <h3>Power supplies per switch</h3><div class="scroll"><table class="t"><thead><tr><th>Room</th><th>Device</th><th class="r">Qty</th><th class="r">PoE load each</th><th>Power supplies</th><th class="r">PoE available${P.psuRed?' (after a PSU failure)':''}</th><th class="r">Headroom</th><th class="r">Est. draw each</th></tr></thead><tbody>${
       result.power.map(p=>`<tr><td>${esc(p.loc)}</td><td>${esc(p.model)}</td><td class="r">${p.n}</td><td class="r">${p.poe?fmt(p.poe)+' W':'–'}</td><td>${esc(p.cfg)}</td><td class="r">${p.budget?fmt(p.budget)+' W':'–'}</td><td class="r">${p.head!==null?fmt(p.head*100)+'%':'–'}</td><td class="r">${fmt(p.est)} W</td></tr>`).join('')}</tbody></table></div>
       <p class="cap">Estimated draw = datasheet maximum without PoE + PoE load ÷ ${eff} (PSU efficiency). Circuits assume 80% continuous load. ${P.psuRed?'Feed each power supply from a separate circuit or UPS.':''}</p>`; }
@@ -170,9 +172,10 @@ function renderResults(){
 const errs=()=>result.errors.map(e=>`<p class="err"><b>${esc(e.loc)}:</b> ${esc(e.msg)}</p>`).join('');
 
 // ---------- diagram ----------
-function diagram(forExport){
+const PRINT={page:'#FFFFFF',bg:'#F8FAFC',box:'#E2E8F0',line:'#16A35E',txt:'#101520',mut:'#64748B',gw:'#64748B'};
+function diagram(forExport,pal){
   const cv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim(); // export uses the colours currently on screen
-  const C=forExport?{page:cv('--bg')||'#101520',bg:cv('--bg2')||'#161d2b',box:cv('--box')||'#2B3749',line:cv('--accent')||'#26E880',txt:cv('--fg')||'#FFFFFF',mut:cv('--mut')||'#94A3B8',gw:cv('--mut')||'#94A3B8'}:{bg:'var(--bg2)',box:'var(--box)',line:'var(--accent)',txt:'var(--fg)',mut:'var(--mut)',gw:'var(--mut)'};
+  const C=pal||(forExport?{page:cv('--bg')||'#101520',bg:cv('--bg2')||'#161d2b',box:cv('--box')||'#2B3749',line:cv('--accent')||'#26E880',txt:cv('--fg')||'#FFFFFF',mut:cv('--mut')||'#94A3B8',gw:cv('--mut')||'#94A3B8'}:{bg:'var(--bg2)',box:'var(--box)',line:'var(--accent)',txt:'var(--fg)',mut:'var(--mut)',gw:'var(--mut)'});
   const F="Outfit, Arial, sans-serif", nodes=result.accessNodes, locs=state.locations.filter(L=>nodes.some(n=>n.loc===L.name));
   if(!locs.length) return `<p class="empty">Add devices to a room to see the network.</p>`;
   const colW=250, gap=24, W=Math.max(760,locs.length*(colW+gap)+gap), core=result.core, gwOn=state.project.gateway;
@@ -212,7 +215,7 @@ function diagram(forExport){
     for(let i=0;i<cb.length-1;i++){ const a=cb[i],b=cb[i+1]; lines+=`<line x1="${a.x+a.w}" y1="${a.y+22}" x2="${b.x}" y2="${b.y+22}" stroke="${C.line}" stroke-width="3"/><line x1="${a.x+a.w}" y1="${a.y+36}" x2="${b.x}" y2="${b.y+36}" stroke="${C.line}" stroke-width="3"/>`; labels+=text((a.x+a.w+b.x)/2,a.y+58,`${core.isl} × ${core.islSpeed}G`,{s:10.5,w:600,c:C.line})+text((a.x+a.w+b.x)/2,a.y+71,`needs ${Math.round(core.islReq)} Gbps`,{s:9.5,c:C.mut}); }
     if(gwOn) lines+=`<line x1="${cb[0].x+cb[0].w/2}" y1="${yCore}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5"/>`; }
   if(gwOn) s+=box(cx-95,yGw,190,48,C.box)+text(cx,yGw+21,'PR460X Pro Router',{s:13,w:700})+text(cx,yGw+37,'Internet gateway',{s:10.5,c:C.mut});
-  const foot=forExport?text(20,H-22,`${state.project.name||'Project'}: estimate only, must be validated by the ProAV Design team before ordering. Catalog ${CATMETA.version}.`,{a:'start',s:11,c:C.mut}):'';
+  const foot=forExport&&!pal?text(20,H-22,`${state.project.name||'Project'}: estimate only, must be validated by the ProAV Design team before ordering. Catalog ${CATMETA.version}.`,{a:'start',s:11,c:C.mut}):'';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Network diagram">${forExport?`<style>@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;display=swap');</style><rect width="100%" height="100%" fill="${C.page}"/>`:''}${lines}${s}${labels}${foot}</svg>`;
 }
 
@@ -286,11 +289,13 @@ async function buildPackage(){
   if(!window.JSZip){ toast('ZIP library did not load.'); return; }
   const meta={rid:'NTGR-'+Date.now().toString(36).toUpperCase(),at:new Date().toISOString(),name:$('#rq-name').value.trim(),email,company:$('#rq-co').value.trim(),notes:$('#rq-notes').value.trim()};
   const xl=buildXlsx(); if(!xl) return;
+  let pdf=null; try{ pdf=await buildPdf({rid:meta.rid}); }catch(e){ console.error(e); } // package still builds if the PDF fails
   const base=slug(), s=stats(), summary=summaryText(meta);
   const files=[
     {n:'Design summary.txt',d:summary,t:'text/plain; charset=UTF-8'},
     {n:`${base}-bom.xlsx`,d:await xl.arrayBuffer(),t:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
     {n:`${base}-network.svg`,d:diagram(true),t:'image/svg+xml'},
+    ...(pdf?[{n:`${base}-report.pdf`,d:await pdf.arrayBuffer(),t:'application/pdf'}]:[]),
     {n:`${base}-project.json`,d:JSON.stringify(state,null,2),t:'application/json'},
     {n:'request.json',d:JSON.stringify({type:'design_validation',requestId:meta.rid,createdAt:meta.at,to:MAIL(),subject:subj(),requester:{name:meta.name,email,company:meta.company},
       project:{name,region:state.project.region,taa:!!state.project.taa,redundantPower:state.project.psuRed?(state.project.psuScope==='mdf'?'mdf':'all'):'none',redundantCore:!!state.project.dualCore,family:state.project.family},
@@ -298,12 +303,12 @@ async function buildPackage(){
   const att=[]; for(const f of ATT) att.push({n:f.name,d:await f.arrayBuffer(),t:f.type||'application/octet-stream'});
   // ready-to-send email (opens as a draft in Outlook / Apple Mail)
   const B='=_ntgr_'+Math.random().toString(36).slice(2);
-  const body=`Hello ProAV Design team,\r\n\r\nPlease validate the attached design.\r\n\r\nProject: ${name}\r\nRequested by: ${meta.name||''} <${email}>${meta.company?` (${meta.company})`:''}\r\nRequest ID: ${meta.rid}\r\nDevices: ${s.eps}, switches: ${s.sw}, catalog ${CATMETA.version}\r\n${meta.notes?`\r\nNotes:\r\n${meta.notes}\r\n`:''}\r\nThe design summary, bill of materials, network diagram and project file are attached.\r\n\r\nThank you`;
+  const body=`Hello ProAV Design team,\r\n\r\nPlease validate the attached design.\r\n\r\nProject: ${name}\r\nRequested by: ${meta.name||''} <${email}>${meta.company?` (${meta.company})`:''}\r\nRequest ID: ${meta.rid}\r\nDevices: ${s.eps}, switches: ${s.sw}, catalog ${CATMETA.version}\r\n${meta.notes?`\r\nNotes:\r\n${meta.notes}\r\n`:''}\r\n${pdf?'The design report (PDF), design summary':'The design summary'}, bill of materials, network diagram and project file are attached.\r\n\r\nThank you`;
   let eml=`X-Unsent: 1\r\nTo: ${MAIL()}\r\nSubject: ${encHdr(subj())}\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="${B}"\r\n\r\n--${B}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap76(btoa(unescape(encodeURIComponent(body))))}`;
   for(const f of [...files,...att]){ const data=typeof f.d==='string'?b64(new TextEncoder().encode(f.d)):b64(f.d);
     eml+=`--${B}\r\nContent-Type: ${f.t}; name="${encHdr(f.n)}"\r\nContent-Disposition: attachment; filename="${encHdr(f.n)}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap76(data)}`; }
   eml+=`--${B}--\r\n`;
-  const readme=`HOW TO SEND THIS DESIGN FOR VALIDATION\r\n\r\n1. Double-click "Send this email.eml". It opens a ready-made email with every file attached.\r\n2. Check it and press Send.\r\n\r\nOr send it yourself:\r\n  To:      ${MAIL()}\r\n  Subject: ${subj()}\r\n  Attach:  this ZIP file\r\n\r\nContents\r\n  Design summary.txt       Settings, rooms, switches, bandwidth per switch, BoM, checks\r\n  ${base}-bom.xlsx     Bill of materials, per room, power, checks\r\n  ${base}-network.svg  Network diagram\r\n  ${base}-project.json Reopen in the BoM builder with "Open project"\r\n  request.json             Machine-readable request (for automated intake)\r\n  Attachments/             Files you added\r\n\r\nRequest ID: ${meta.rid}\r\nThis is an estimate and must be validated by the ProAV Design team before ordering.\r\n`;
+  const readme=`HOW TO SEND THIS DESIGN FOR VALIDATION\r\n\r\n1. Double-click "Send this email.eml". It opens a ready-made email with every file attached.\r\n2. Check it and press Send.\r\n\r\nOr send it yourself:\r\n  To:      ${MAIL()}\r\n  Subject: ${subj()}\r\n  Attach:  this ZIP file\r\n\r\nContents\r\n  Design summary.txt       Settings, rooms, switches, bandwidth per switch, BoM, checks\r\n  ${base}-bom.xlsx     Bill of materials, per room, power, checks\r\n  ${base}-network.svg  Network diagram\r\n${pdf?`  ${base}-report.pdf   Design report (cover, summary, diagram, BoM, power, checks)\r\n`:''}  ${base}-project.json Reopen in the BoM builder with "Open project"\r\n  request.json             Machine-readable request (for automated intake)\r\n  Attachments/             Files you added\r\n\r\nRequest ID: ${meta.rid}\r\nThis is an estimate and must be validated by the ProAV Design team before ordering.\r\n`;
   const zip=new JSZip(), root=zip.folder(`Design validation - ${name.replace(/[\\/:*?"<>|]/g,'-')}`);
   root.file('README - how to send.txt',readme); root.file('Send this email.eml',eml);
   files.forEach(f=>root.file(f.n,f.d)); if(att.length){ const a=root.folder('Attachments'); att.forEach(f=>a.file(f.n,f.d)); }
@@ -379,7 +384,7 @@ function adminPage(){
   ${!DB?'<p class="mut">Requests appear here when the tool runs with shared storage.</p>':!reqs.length?'<p class="mut">No requests here.</p>':`<div class="scroll"><table class="t reqs"><thead><tr><th></th><th>Received</th><th>Project</th><th>Name</th><th>Company</th><th class="r">Devices</th><th class="r">Switches</th><th>Status</th><th></th></tr></thead><tbody>${
     reqs.map(r=>{ const n=isNew(r), o=OPEN.has(r.rid); return `<tr class="${n?'unread':''}"><td>${n?'<span class="dot" title="New"></span>':''}</td><td>${new Date(r.at).toLocaleString()}</td><td>${esc(r.project)}</td><td>${esc(r.name||'')}</td><td>${esc(r.company||'')}</td><td class="r">${fmt(r.devices)}</td><td class="r">${fmt(r.switches)}</td>
       <td><select data-rstat="${esc(r.uid)}|${esc(r.rid)}" aria-label="Status">${STATUSES.map(s=>`<option${s===(r.status||'New')?' selected':''}>${s}</option>`).join('')}</select></td>
-      <td class="acts">${act('viewreq',r,o?'Hide':'View')}${r.pkg?act('dlpkg',r,'Download ZIP'):'<span class="mut small">No ZIP</span>'}${act('openreq',r,'Open design')}</td></tr>
+      <td class="acts">${act('viewreq',r,o?'Hide':'View')}${r.pkg?act('dlpkg',r,'Download ZIP'):'<span class="mut small">No ZIP</span>'}${act('openreq',r,'Open design')}${act('reqpdf',r,(r.status==='Validated'?'PDF (validated)':'PDF report'))}</td></tr>
       ${o?`<tr class="sub"><td></td><td colspan="8">${reqDetail(r)}</td></tr>`:''}`; }).join('')}</tbody></table></div>`}
   </section>
   ${usagePanel()}
@@ -406,7 +411,7 @@ function stagedView(){ const v=staged.issues, errsN=v.filter(i=>i.lvl==='error')
     ${v.length?`<ul class="notes">${v.map(i=>`<li class="${i.lvl==='error'?'warn':''}"><span>${i.lvl==='error'?'!':'i'}</span>${esc(i.msg)}</li>`).join('')}</ul>`:'<p>All checks passed.</p>'}
     <button class="btn" data-act="publishcat"${errsN?' disabled':''}>${errsN?'Fix errors before publishing':(DB?'Publish to everyone':'Use for this session')}</button> <button class="ghost" data-act="discard">Discard</button></div>`; }
 document.addEventListener('change',async ev=>{ const t=ev.target; if(t.dataset&&t.dataset.rfilter){ RFILTER=t.dataset.rfilter; return renderAdmin(); } if(!t.dataset.rstat) return; const [u,r]=t.dataset.rstat.split('|');
-  try{ const ref=DB.doc('requests/'+u), d=await ref.get(); const items=JSON.parse(d.data().items); const it=items.find(i=>i.rid===r); if(it){ it.status=t.value; if(!it.viewedAt) it.viewedAt=new Date().toISOString(); } const li=(REQS.find(x=>x.uid===u)||{items:[]}).items.find(i=>i.rid===r); if(li){ li.status=t.value; li.viewedAt=li.viewedAt||new Date().toISOString(); } adminBadge(); await ref.update({items:JSON.stringify(items)}); toast('Status updated.'); }catch(e){ toast('Could not update status.'); } });
+  try{ const ref=DB.doc('requests/'+u), d=await ref.get(); const items=JSON.parse(d.data().items); const it=items.find(i=>i.rid===r); if(it){ it.status=t.value; if(t.value==='Validated'){ it.validatedAt=new Date().toISOString(); } if(!it.viewedAt) it.viewedAt=new Date().toISOString(); } const li=(REQS.find(x=>x.uid===u)||{items:[]}).items.find(i=>i.rid===r); if(li){ li.status=t.value; li.viewedAt=li.viewedAt||new Date().toISOString(); if(it&&it.validatedAt) li.validatedAt=it.validatedAt; } adminBadge(); await ref.update({items:JSON.stringify(items)}); toast('Status updated.'); }catch(e){ toast('Could not update status.'); } });
 function openReq(u,r){ const d=REQS.find(x=>x.uid===u); const it=d&&d.items.find(i=>i.rid===r); if(!it) return; try{ state=JSON.parse(it.design); state.project={...DEFAULT().project,...state.project}; tab='diagram'; location.hash=''; run(); toast(`Opened ${it.project}.`); }catch(e){ toast('That design could not be opened.'); } }
 function readSheet(wb,name){ const ws=wb.Sheets[name]; if(!ws) return []; return XLSX.utils.sheet_to_json(ws,{range:3,defval:null}).filter(r=>Object.values(r)[0]!==null).map(r=>Object.fromEntries(Object.entries(r).filter(([k,v])=>v!==null&&!/^__EMPTY/.test(k)))); }
 $('#fcat').addEventListener('change',async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
@@ -451,6 +456,124 @@ function buildXlsx(){ if(!window.XLSX){ toast('Spreadsheet library did not load.
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Level','Message'],...result.errors.map(e=>['error',e.loc+': '+e.msg]),...result.notes.map(n=>[n.lvl,n.msg])]),'Checks');
   return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})]); }
 function exportXlsx(){ const b=buildXlsx(); if(b){ saveFile(`${slug()}-bom.xlsx`,b); track('bom'); } }
+// ---------- PDF report ----------
+// Renders an SVG string to a PNG data URL (the diagram goes into the PDF as a sharp raster image).
+function svgToPng(svg,w,h,scale){ return new Promise((ok,no)=>{ const img=new Image();
+  img.onload=()=>{ const c=document.createElement('canvas'); c.width=Math.round(w*scale); c.height=Math.round(h*scale); const g=c.getContext('2d'); g.scale(scale,scale); g.drawImage(img,0,0,w,h); ok(c.toDataURL('image/png')); };
+  img.onerror=()=>no(new Error('image render failed')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); }); }
+// Outfit (NETGEAR corporate typeface) is embedded in the PDF; falls back to Helvetica if it cannot be fetched.
+let OUTFIT=null; const OUTFIT_URL={normal:'https://fonts.gstatic.com/s/outfit/v15/QGYyz_MVcBeNP4NjuGObqx1XmO1I4TC1C4E.ttf',bold:'https://fonts.gstatic.com/s/outfit/v15/QGYyz_MVcBeNP4NjuGObqx1XmO1I4deyC4E.ttf'};
+async function loadOutfit(){ if(OUTFIT) return OUTFIT; const b64=buf=>{ let s=''; const u=new Uint8Array(buf); for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); };
+  const out={}; for(const [k,u] of Object.entries(OUTFIT_URL)){ const r=await fetch(u); if(!r.ok) throw new Error('font'); out[k]=b64(await r.arrayBuffer()); } return OUTFIT=out; }
+// v: {validated, by, at} when generated from the admin page; omitted for a customer download (always "not validated").
+async function buildPdf(v={}){
+  if(!window.jspdf||!window.jspdf.jsPDF.API.autoTable){ toast('PDF library did not load.'); return null; }
+  const P=state.project, T=result.settings, s=stats(), fmtName=P.region==='Americas'?'letter':'a4';
+  const doc=new window.jspdf.jsPDF({unit:'pt',format:fmtName,compress:true});
+  let FONT='helvetica'; try{ const f=await loadOutfit(); doc.addFileToVFS('Outfit-Regular.ttf',f.normal); doc.addFont('Outfit-Regular.ttf','Outfit','normal'); doc.addFileToVFS('Outfit-Bold.ttf',f.bold); doc.addFont('Outfit-Bold.ttf','Outfit','bold'); FONT='Outfit'; }catch(e){}
+  // NETGEAR AV palette: Gray 7 + AV green on the cover, Corporate Foundation grays inside
+  const G7=[16,21,32], G6=[43,55,73], G5=[100,116,139], G4=[148,163,184], G3=[203,213,225], G1=[241,245,249], AV=[38,232,128], AVD=[22,163,94], WH=[255,255,255], INFO=[30,111,217], M=40;
+  const INK=G7, MUT=G5, ok=!!v.validated;
+  const pw=()=>doc.internal.pageSize.getWidth(), ph=()=>doc.internal.pageSize.getHeight();
+  const name=P.name||'Untitled project', now=new Date(), when=v.at?new Date(v.at):now, longDate=d=>d.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  const font=(w,sz,c)=>{ doc.setFont(FONT,w); doc.setFontSize(sz); doc.setTextColor(...c); };
+  const tbl={theme:'plain',margin:{left:M,right:M,top:M+16,bottom:M+10},styles:{font:FONT,fontSize:8.5,textColor:INK,cellPadding:{top:4,bottom:4,left:5,right:5},lineColor:G3,overflow:'linebreak'},
+    headStyles:{textColor:MUT,fontStyle:'normal',fontSize:7.5,lineWidth:{bottom:0.75}},bodyStyles:{lineWidth:{bottom:0.25}}};
+  const at=o=>{ doc.autoTable({...tbl,...o,styles:{...tbl.styles,...(o.styles||{})}}); return doc.lastAutoTable.finalY; };
+  let y=M;
+  const need=h=>{ if(y+h>ph()-M-20){ doc.addPage(fmtName,'portrait'); y=M+16; } };
+  const h2=t=>{ need(60); font('bold',15,INK); doc.text(t,M,y+14); doc.setDrawColor(...AVD); doc.setLineWidth(2); doc.line(M,y+21,M+28,y+21); y+=34; };
+  const h3=t=>{ need(40); font('bold',8,MUT); doc.text(t.toUpperCase(),M,y+10,{charSpace:0.6}); y+=18; };
+  const para=(t,o={})=>{ const sz=o.s||8.5; font('normal',sz,o.c||MUT); const L=doc.splitTextToSize(t,o.w||pw()-2*M); need(L.length*sz*1.35); doc.text(L,o.x||M,y+sz); y+=L.length*sz*1.35+(o.after??8); };
+  const sku=x=>/^TBD/.test(x)?'To be confirmed':x;
+
+  // --- cover: full-bleed Gray 7 (AV brand standard), logo, project, date, validation stamp ---
+  doc.setFillColor(...G7); doc.rect(0,0,pw(),ph(),'F');
+  try{ const lg=await svgToPng(atob(LOGO_AV_ONDARK.split(',')[1]),290,32,5); doc.addImage(lg,'PNG',M+8,M+12,190,190*32/290); }catch(e){}
+  let cy=ph()*0.36;
+  font('bold',9,AV); doc.text('AV NETWORK DESIGN REPORT',M+8,cy,{charSpace:1.2}); cy+=40;
+  font('bold',34,WH); const tl=doc.splitTextToSize(name,pw()-2*M-16).slice(0,3); doc.text(tl,M+8,cy); cy+=tl.length*38+6;
+  font('normal',14,WH); doc.text(longDate(now),M+8,cy); cy+=20;
+  font('normal',10,G4); doc.text(`${P.region}${P.taa?', TAA-compliant':''}   ·   Catalog ${CATMETA.version}${v.rid?`   ·   Request ${v.rid}`:''}`,M+8,cy); cy+=40;
+  // validation stamp (8 pt radius per brand)
+  const sw=pw()-2*M-16, sh=62;
+  if(ok){ doc.setFillColor(...AV); doc.roundedRect(M+8,cy,sw,sh,8,8,'F'); font('bold',13,G7); doc.text('VALIDATED BY THE PRO AV DESIGN TEAM',M+26,cy+26,{charSpace:0.4});
+    font('normal',10,G7); doc.text(`${v.by?`Reviewed by ${v.by}, `:''}${longDate(when)}`,M+26,cy+44); }
+  else { doc.setDrawColor(...AV); doc.setLineWidth(1.2); doc.roundedRect(M+8,cy,sw,sh,8,8,'S'); font('bold',13,AV); doc.text('NOT VALIDATED',M+26,cy+26,{charSpace:0.4});
+    font('normal',10,WH); doc.text(doc.splitTextToSize('Estimate for planning only. Send this design to the Pro AV Design team for validation before ordering.',sw-36),M+26,cy+44); }
+  // key figures along the bottom
+  const tiles=[[fmt(s.eps),'DEVICES'],[fmt(s.sw),'SWITCHES'],[fmt(s.poe)+' W','POE LOAD'],[fmt(s.est/1000,1)+' kW','EST. POWER'],[fmt(s.ru,1)+' U','RACK SPACE']], tg=6, tw=(pw()-2*M-16-tg*4)/5, ty=ph()-M-70;
+  tiles.forEach(([val,l],i)=>{ const x=M+8+i*(tw+tg); doc.setFillColor(...G6); doc.roundedRect(x,ty,tw,52,6,6,'F'); font('bold',16,WH); doc.text(val,x+10,ty+25); font('normal',7,G4); doc.text(l,x+10,ty+40,{charSpace:0.5}); });
+  font('normal',7.5,G4); doc.text('Generated by the NETGEAR AV BoM builder',M+8,ph()-M+8);
+
+  // --- page 2: summary ---
+  doc.addPage(fmtName,'portrait'); y=M+16; h2('Design summary');
+  const dis=ok?`This design was validated by the Pro AV Design team on ${longDate(when)}. Pricing and availability are provided by NETGEAR or your distributor.`
+    :`Estimate for planning only. ${T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the Pro AV Design team before ordering.'} Validation: ${MAIL()}`;
+  font('normal',8.5,INK); const dl=doc.splitTextToSize(dis,pw()-2*M-28), dh=dl.length*11.5+18;
+  doc.setFillColor(...G1); doc.setDrawColor(...AVD); doc.setLineWidth(0.75); doc.roundedRect(M,y,pw()-2*M,dh,6,6,'FD'); doc.text(dl,M+14,y+17); y+=dh+12;
+  if(result.errors.length) para(`${result.errors.length} issue${result.errors.length>1?'s':''} must be resolved before this design is complete. See Checks.`,{c:INFO});
+  y+=6; h3('Design settings');
+  const core=result.core, settings=[['Switch series',P.family==='Auto'?'Best fit':P.family+' only'],['Core',core?`${core.k} × ${core.p.Model_Name}${core.k>1?` (${core.isl} × ${core.islSpeed}G between cores)`:''}`:'None (single room)'],
+    ['Redundant core',P.dualCore?'Yes':'No'],['Redundant power',P.psuRed?(P.psuScope==='mdf'?'Main equipment room only':'All switches'):'No'],['Design basis',P.basis==='stream'?'Stream bandwidth':'Line-rate (non-blocking)'],['Oversubscription',P.oversub+':1'],
+    ['Spare ports',P.spare+'%'],['PoE headroom',P.poeHead+'%'],['Mains voltage',P.voltage+' V'],['Gateway',P.gateway?'PR460X Pro Router':'Not included'],['OnCall 24x7 support',P.support?P.support+(P.support>1?' years':' year'):'Not included'],['TAA required',P.taa?'Yes':'No']];
+  const half=Math.ceil(settings.length/2);
+  y=at({startY:y,body:settings.slice(0,half).map((r,i)=>[...r,...(settings[half+i]||['',''])]),columnStyles:{0:{textColor:MUT,cellWidth:90},2:{textColor:MUT,cellWidth:90}}})+22;
+  h3('Rooms and devices');
+  const rows=[]; state.locations.forEach(L=>{ const n=L.eps.reduce((a,e)=>a+(+e.qty||0),0);
+    rows.push([{content:`${L.name}   ·   ${L.type==='MDF'?'MDF':`IDF, ${fmt(L.distance)} m ${L.media==='SMF'?'single mode':'multimode'} fiber`}   ·   ${n} devices`,colSpan:5,styles:{fontStyle:'bold',fillColor:G1}}]);
+    L.eps.forEach(e=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep)||{}; rows.push([ep.Name||e.ep,ep.Category||'',fmt(e.qty),ep.Link_Speed_Gbps?ep.Link_Speed_Gbps+'G '+(ep.Media||''):'',ep.PoE_W?fmt(ep.PoE_W)+' W':'–']); }); });
+  y=at({startY:y,head:[['Device','Category','Qty','Link','PoE each']],body:rows,columnStyles:{2:{halign:'right',cellWidth:40},3:{cellWidth:80},4:{halign:'right',cellWidth:60}}})+10;
+
+  // --- diagram: landscape page, fitted ---
+  doc.addPage(fmtName,'landscape'); y=M+16; h2('Network diagram');
+  const svg=diagram(true,PRINT), m=svg.match(/width="(\d+(?:\.\d+)?)" height="(\d+(?:\.\d+)?)"/);
+  if(m){ const W=+m[1], H=+m[2], bw=pw()-2*M, bh=ph()-y-M-56, k=Math.min(bw/W,bh/H);
+    try{ const png=await svgToPng(svg,W,H,Math.min(3,6000/Math.max(W,H))); doc.addImage(png,'PNG',M+(bw-W*k)/2,y,W*k,H*k,undefined,'FAST'); y+=H*k+12; }
+    catch(e){ para('The diagram could not be drawn in this browser. Download it as .svg instead.'); } }
+  else para('Add devices to a room to see the network.');
+  para('Green lines are uplinks, labelled with link count, speed and the optic or cable used. With a redundant core, every switch has its own full-capacity link group to each core, so either core can carry all traffic alone.');
+
+  // --- bill of materials ---
+  doc.addPage(fmtName,'portrait'); y=M+16; h2('Bill of materials');
+  const R=rollup(), bom=[]; CATORDER.filter(c=>R.some(r=>r.cat===c)).forEach(c=>{ bom.push([{content:c.toUpperCase(),colSpan:4,styles:{fontStyle:'bold',fontSize:7.5,textColor:AVD,fillColor:G1}}]);
+    R.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); });
+  y=at({startY:y,head:[['Part number','Description','Qty','Where']],body:bom,columnStyles:{0:{cellWidth:100,fontStyle:'bold'},2:{halign:'right',cellWidth:34},3:{cellWidth:120,textColor:MUT}},
+    didParseCell:d=>{ if(d.section==='head'&&d.column.index===2) d.cell.styles.halign='right'; }})+12;
+  para(`Part numbers are for ${P.region}${P.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.`);
+
+  // --- power ---
+  y+=10; h2('Power and rack space');
+  const locs=[...new Set(result.power.map(p=>p.loc))];
+  y=at({startY:y,head:[['Room','Est. draw','Datasheet max','Heat load','Current','Circuits','UPS size','Rack']],
+    body:locs.map(l=>{ const r=roomPower(l); return [l,fmt(r.w)+' W',fmt(r.mx)+' W',fmt(r.btu)+' BTU/hr',`${fmt(r.amps,1)} A at ${P.voltage} V`,`${r.circ} × ${r.cA} A`,fmt(r.va)+' VA+',fmt(r.ru,1)+' U']; }),
+    columnStyles:{0:{fontStyle:'bold'}}})+18;
+  h3('Power supplies per switch');
+  y=at({startY:y,head:[['Room','Device','Qty','PoE load each','Power supplies',`PoE available${P.psuRed?' (1 PSU failed)':''}`,'Headroom','Est. draw each']],
+    body:result.power.map(p=>[p.loc,p.model,p.n,p.poe?fmt(p.poe)+' W':'–',p.cfg,p.budget?fmt(p.budget)+' W':'–',p.head!==null?fmt(p.head*100)+'%':'–',fmt(p.est)+' W']),
+    columnStyles:{2:{halign:'right'},3:{halign:'right'},4:{cellWidth:86},5:{halign:'right'},6:{halign:'right'},7:{halign:'right'}}})+12;
+  para(`Estimated draw = datasheet maximum without PoE + PoE load ÷ ${+T.PSU_Efficiency||0.9} (PSU efficiency). Circuits assume 80% continuous load.${P.psuRed?' Feed each power supply from a separate circuit or UPS.':''}`);
+
+  // --- checks ---
+  doc.addPage(fmtName,'portrait'); y=M+16; h2('Checks');
+  const chk=[...result.errors.map(e=>['ISSUE',`${e.loc}: ${e.msg}`]),...result.notes.map(n=>[n.lvl==='warn'?'CHECK':'NOTE',n.msg])];
+  y=chk.length?at({startY:y,body:chk,columnStyles:{0:{cellWidth:46,fontStyle:'bold',fontSize:7}},didParseCell:d=>{ if(d.column.index===0) d.cell.styles.textColor=d.cell.raw==='ISSUE'?INFO:d.cell.raw==='CHECK'?AVD:G4; }})+22:(para('No issues found.'),y);
+  h3('Uplink plan');
+  y=result.links.length?at({startY:y,head:[['Room','Switch','Units','Uplinks each','Speed','Run','Optic / cable']],
+    body:result.links.map(l=>[l.loc,l.model,l.n,l.u,l.speed+'G',l.media+(l.media!=='in-rack'?`, ${l.dist} m`:''),sku(l.optic)]),columnStyles:{2:{halign:'right'},3:{halign:'right'}}})+12:(para('Single switch, no uplinks needed.'),y);
+
+  // --- footer on every page after the cover ---
+  const n=doc.getNumberOfPages(), foot=ok?`${name}: validated by the Pro AV Design team, ${longDate(when)}.`:`${name}: estimate only, not validated. Must be validated by the Pro AV Design team before ordering.`;
+  for(let i=2;i<=n;i++){ doc.setPage(i); doc.setDrawColor(...G3); doc.setLineWidth(0.5); doc.line(M,ph()-M+4,pw()-M,ph()-M+4);
+    font('normal',7.5,MUT); doc.text(foot,M,ph()-M+16); doc.text(`Page ${i} of ${n}`,pw()-M,ph()-M+16,{align:'right'}); }
+  doc.setProperties({title:`${name}: AV network design report`,subject:ok?'Validated NETGEAR AV network design':'NETGEAR AV network design estimate',creator:'NETGEAR AV BoM builder'});
+  return doc.output('blob'); }
+async function exportPdf(v){ toast('Building PDF report…'); try{ const b=await buildPdf(v); if(b){ saveFile(`${slug()}-report${v&&v.validated?'-validated':''}.pdf`,b); track('bom'); } }catch(e){ console.error(e); toast('Could not build the PDF report.'); } }
+// Admin: report for a stored request; marked validated when its status is Validated.
+async function reqPdf(u,r){ const d=REQS.find(x=>x.uid===u), it=d&&d.items.find(i=>i.rid===r); if(!it) return;
+  const keep=[state,result]; try{ state=JSON.parse(it.design); state.project={...DEFAULT().project,...state.project}; result=ENG.design(CAT,state);
+    await exportPdf({validated:it.status==='Validated',by:it.validatedBy,at:it.validatedAt,rid:it.rid}); }
+  catch(e){ toast('That design could not be opened.'); } finally{ [state,result]=keep; } }
 $('#fjson').addEventListener('change',async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
   try{ const s=JSON.parse(await f.text()); if(!s.project||!s.locations) throw new Error('not a project file'); state=s; state.project={...DEFAULT().project,...s.project}; run(); toast('Project opened.'); }catch(e){ toast('Could not open that file: '+e.message); } });
 function catInfo(){ $('#catinfo').textContent=`Catalog ${CATMETA.version}`; }
