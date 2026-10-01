@@ -370,7 +370,10 @@ function solveCore(cat,PT,dem,S,forced){
         if(!fits.length) continue;
         const pick=fits.find(f=>hasOptic(cat,f.s,'DAC',3,true))||fits[0]; islSpeed=pick.s; isl=pick.n; }
       const psu=psuPick(cat,p,0,S); if(!psu){ psuFail=true; continue; }
-      const sc=k*scoreUnit(p,psu);
+      // ports that cannot carry any link this design uses (e.g. 1/2.5G SFP when every uplink is 10G) are wasted
+      const linkSpeeds=[...speeds,...(dem.gw?[10]:[]),...(islSpeed?[islSpeed]:[])];
+      const wasted=PT.filter(t=>N(p[t.col])>0&&!(t.up&&linkSpeeds.some(s=>supports(t,s)))).reduce((a,t)=>a+N(p[t.col]),0);
+      const sc=k*(scoreUnit(p,psu)+wasted*0.5);
       if(!best||sc<best.score) best={p,k,psu,islSpeed,isl,islReq,score:sc};
       break;
     }

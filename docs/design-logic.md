@@ -132,8 +132,11 @@ flowchart TD
     H -- No --> Z
     H -- Yes --> P{"PSU OK?<br/>redundant power needs a module slot"}
     P -- No --> Z
-    P -- Yes --> S["Score, lowest wins"]
+    P -- Yes --> W["Penalty for wasted ports<br/>ports that cannot carry any link speed used"]
+    W --> S["Score, lowest wins"]
 ```
+
+**Wasted ports.** A core is scored like a room switch, plus 0.5 for every port that cannot carry any link speed the design uses. Example: when every uplink is 10G, the 24 × 1/2.5G SFP ports of the M4350-24F4X are wasted, so the M4350-24F4V (24 × 10G SFP+) wins. When the uplinks run at 1G, for example an audio-only design on stream bandwidth, those ports are usable and the 24F4X can be chosen. A core may be filled completely; there is no spare-port rule for the core.
 
 Core-to-core link sizing (Design options):
 
@@ -176,6 +179,8 @@ If no core fits, the engine reruns the whole design with room uplinks on the **f
 | 11 × 10G copper encoders, one room | 1 × M4350-12X12F, standalone | Native 10G copper ports; no core needed on one switch. |
 | 8 × touch panels, redundant power on | M4350-24G4XF + APS600W | M4250 10-port models have one fixed PSU. The 8M2V has redundant PSUs but only 8 copper ports, and 9 are needed with spare. |
 | Two closets + router, redundant core and power | 2 × M4350-24F4V core | Each core needs 5 × 10G (2 uplinks, 2 core-to-core, 1 router). The 24F4X has only 4. Fixed-PSU models (8X8F, 12X12F, 16XF) are excluded by redundant power. |
+| Three closets + router, single core, 10G uplinks | M4350-24F4V core | The 24F4X has exactly the 4 × 10G ports needed, but its 24 × 1/2.5G ports are wasted at 10G, so it scores worse. |
+| Audio-only closets, stream bandwidth, 1G uplinks | M4350-24F4X core | Its 1/2.5G SFP ports carry the 1G uplinks, so none are wasted. |
 
 ## Known limits
 
