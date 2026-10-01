@@ -3,7 +3,9 @@ const base = {region:'Americas',taa:false,psuRed:false,dualUplink:false,dualCore
   voltage:110,gateway:false,support:0,family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'};
 const L = (name, type, distance, media, eps) => ({id:name, name, type, distance, media, override:'Auto', eps:eps.map(([ep,qty])=>({ep,qty}))});
 const MDF = (eps=[]) => L('Main equipment room','MDF',3,'MMF',eps);
-const S = (id, title, expect, project, locations) => ({id, title, expect, project:{...base, name:`${id} ${title}`, ...project}, locations});
+const S = (id, title, expect, project, locations, extraEndpoints=[]) => ({id, title, expect, project:{...base, name:`${id} ${title}`, ...project}, locations, extraEndpoints});
+// device types a scenario needs that are not in the catalog library
+const EP25FX = {Endpoint_ID:'EP-25G-FX', Name:'25G fiber device (SFP28)', Category:'Video', Link_Speed_Gbps:25, Media:'Fiber', PoE_W:0, Stream_Mbps:20000};
 
 module.exports = [
   S('V01','Screenshot case, single core',
@@ -40,7 +42,7 @@ module.exports = [
     'M4250 has no 25G: closets above 80G cannot fit; expect a clear message or split switches, never a 25G optic on M4250.',
     {spare:0, family:'M4250'}, [MDF(), L('Closet A','IDF',100,'MMF',[['EP-1G-RX',40]]), L('Closet B','IDF',100,'MMF',[['EP-1G-TX',16]])]),
   S('V12','Many 10G closets, core port pressure',
-    'Six 60G closets: core runs out of SFP+ ports, engine should move to 25G/100G and a bigger core.',
+    'Six 60G closets, redundant core: needs an M4500 core (48 x 25G); 25G optics must fit both M4350 and M4500.',
     {spare:0, dualCore:true}, [MDF(), ...[1,2,3,4,5,6].map(i=>L(`Closet ${i}`,'IDF',100,'MMF',[['EP-10G-TX',6]]))]),
   S('V13','Redundant power, TAA, Europe',
     'Option check: TAA SKUs only, redundant PSUs, A4 report, EU SKUs. Uplinks as in V01.',
@@ -57,4 +59,28 @@ module.exports = [
   S('V17','Dante audio, stream basis',
     'Stream basis: audio is ~20 Mb/s per device, so even a big audio room needs only 1 x 10G (or 2 with dual uplinks).',
     {basis:'stream', dualUplink:true}, [MDF(), L('Stage','IDF',100,'MMF',[['EP-DANTE',80]])]),
+  S('V18','M4500 spine and leaf, 10G fiber',
+    'Six rooms of 40 x 10G fiber devices, redundant core: M4500-48XF8C leaves with 4 x 100G to each M4500-32C core (datasheet 320 x 320 style).',
+    {spare:0, dualCore:true, islRule:'failover'}, [MDF(), ...[1,2,3,4,5,6].map(i=>L(`Leaf ${i}`,'IDF',100,'MMF',[['EP-10G-FX',40]]))]),
+  S('V19','Ten 200G closets, single core',
+    'Ten closets of 20 x 10G: 100G or 25G uplinks into an M4500 core; 100G optics must fit both ends (optic.ca when the closet is M4350).',
+    {spare:0}, [MDF(), ...[1,2,3,4,5,6,7,8,9,10].map(i=>L(`Closet ${i}`,'IDF',100,'MMF',[['EP-10G-TX',20]]))]),
+  S('V20','PR460X gateway',
+    'Gateway on: PR460X connects to the core with 10G SR optics on both ends (no DAC), plus an LC patch cord note.',
+    {spare:0, gateway:true}, [MDF(), L('Closet 2','IDF',100,'MMF',[['EP-10G-TX',9]]), L('Closet 3','IDF',100,'MMF',[['EP-WBE758',8]])]),
+  S('V21','PR460X gateway, M4500 core',
+    'Gateway on with an M4500 core: router link still uses AXM761 optics (fits PR460X and M4500), never a DAC.',
+    {spare:0, gateway:true, dualCore:true}, [MDF(), ...[1,2,3,4,5,6].map(i=>L(`Closet ${i}`,'IDF',100,'MMF',[['EP-10G-TX',6]]))]),
+  S('V22','M4500 as room switch, 25G fiber',
+    'Two rooms of 20 x 25G fiber devices (no timing need): M4500-48XF8C or M4350-16V4C with 100G uplinks, core terminates 100G only.',
+    {spare:0}, [MDF(), L('Render A','IDF',100,'MMF',[['EP-25G-FX',20]]), L('Render B','IDF',100,'MMF',[['EP-25G-FX',20]])], [EP25FX]),
+  S('V23','Many 100G links plus a 10G closet (known gap)',
+    'Known gap: 12 x 100G plus 10G links need QSFP28 breakout on the core, which the engine does not model. Expect a clear error, not a wrong design.',
+    {spare:0}, [MDF(), L('Render farm','IDF',100,'MMF',[['EP-25G-FX',40]]), L('Office','IDF',100,'MMF',[['EP-1G-TX',8]])], [EP25FX]),
+  S('V24','100G closets with gateway, M4500-32C core',
+    'M4350-40X4C closets on 4 x 100G into an M4500-32C. The core has no 10G port, so the PR460X goes on a free 10G copper port of a closet switch (Cat6a within 100 m).',
+    {gateway:true, psuRed:true, dualUplink:true, spare:10}, [MDF(), L('Closet 1','IDF',100,'MMF',[['EP-10G-TX',60],['EP-10G-RX',10]]), L('Closet 2','IDF',100,'MMF',[['EP-10G-TX',20],['EP-10G-RX',8]]), L('Closet 3','IDF',100,'MMF',[['EP-10G-TX',28]])]),
+  S('V25','Default demo design',
+    'The app\'s default rooms with gateway: core box lists the 10G links per room and the router link, and the BoM books the core-end optics in the core.',
+    {gateway:true, psuRed:true, dualUplink:true, spare:10}, [L('Main equipment room','MDF',3,'MMF',[['EP-1G-TX',16],['EP-10G-TX',4],['EP-DANTE',8]]), L('Closet 1','IDF',150,'MMF',[['EP-1G-RX',24],['EP-PTZ',4],['EP-WBE758',4]]), L('Closet 2','IDF',600,'SMF',[['EP-1G-RX',12],['EP-10G-FX',4],['EP-PANEL',6]])]),
 ];

@@ -174,13 +174,26 @@ Room switches and the core are scored together, because a room's cheapest switch
 |---|---|
 | Switches | Orderable SKU for the region (or the TAA SKU when TAA is on). |
 | PSU modules | From the chosen PSU configuration, with the power cord for the region. |
-| Uplink optics | Links in the main room up to 20 m (`In_Rack_Max_m`) use a DAC or AOC cable, 1 per link. Longer links use an optic for the speed, fiber type and distance, shortest reach that covers it, 2 per link (both ends). LRM and PSM4 (8-fiber MPO trunk) are used only when nothing else reaches. 25G/100G parts are optic.ca modules validated in NETGEAR KB 000066694. Missing items appear as `TBD` placeholders with a warning. Breakout cables are in the catalog but not used yet. |
+| Uplink optics | Links in the main room up to 20 m (`In_Rack_Max_m`) use a DAC or AOC cable, 1 per link. Longer links use an optic for the speed, fiber type and distance, shortest reach that covers it, 2 per link: one is booked in the room, the other in the core location, where each is installed. The diagram's core box lists every link it terminates (per room, part and speed) with a port-usage gauge. The part must be listed in the Compatibility sheet for **both** ends: the room switch and the core (see below). LRM and PSM4 (8-fiber MPO trunk) are used only when nothing else reaches. With equal reach, NETGEAR-branded parts come before optic.ca (`-OC`) parts. Missing items appear as `TBD` placeholders with a warning. Breakout cables are in the catalog but not used yet. |
 | Fiber endpoints | One switch-side optic per fiber device. |
 | Copper modules | One AGM734 / AXM765 per copper device on a fiber port, never for spare ports. |
 | Core | Core switches, PSU modules, core-to-core DAC cables. |
-| Gateway | PR460X router and one DAC to the core. |
+| Gateway | PR460X router, on a free 10G port of the core. The PR460X does not take DAC/AOC cables, so that link is a 10G SR optic (AXM761) on both ends, plus a multimode LC patch cord (not in the BoM). If the core has no free 10G port (for example an M4500-32C, 100G only), the router goes on a room switch, main room first, then the nearest closet: a free 10G copper port over Cat6a when the run is within `Copper_10G_Max_m` (100 m), otherwise a free 10G fiber port with optics both ends fit. SFP28 ports next to 25G uplinks are skipped (one speed per 4-port block). If no switch has a free port, the design shows a gateway error. |
 | WiFi access points | NETGEAR APs in the device list are added as products. |
 | Support | OnCall support SKU per switch, by support category and years. |
+
+### Compatibility (which part fits which switch)
+
+The Compatibility sheet lists, per family (for example M4350) or product (for example PR460X), the optics and cables it takes. When a family or product has rows there, only those parts are used for it; `Not compatible` rows are documentation only. A family without rows accepts any part.
+
+| Link | Must fit |
+|---|---|
+| Room switch to core | Room switch and core |
+| Core to core | Core |
+| Fiber device | Its room switch |
+| Gateway to core or room switch | PR460X and that switch |
+
+Example: NETGEAR ACM761 (100G SR4) is listed for M4500 only, and the optic.ca NGQ100G-SR4-OC for M4350 and M4500. An M4350-40X4C closet on an M4500-32C core gets the optic.ca part; an M4500-48XF8C leaf on the same core gets the ACM761.
 
 ## 5. Power plan and checks
 
@@ -201,11 +214,27 @@ Room switches and the core are scored together, because a room's cheapest switch
 | Audio-only closets, stream bandwidth, `Min_Uplink_Gbps` = 1 | M4350-24F4X core | Its 1/2.5G SFP ports carry the 1G uplinks, so none are wasted. With the default of 10, uplinks are 10G and the core is a 10G model. |
 | Closets of 90G, 80G and 8G, single core | 4 × 25G, 8 × 10G, 1 × 10G; M4350-24F4V core | The 80G closet stays on 10G because 25G there would need a bigger core. |
 | 90G closet at 150 m multimode | 2 switches, 8 × 10G each | 25G SR reaches 100 m, so splitting at 10G avoids a placeholder optic. |
+| Six 60G closets, redundant core | 8 × 25G each; 2 × M4500-48XF8C core | 48 × 25G ports per core; no M4350 has that many. |
+| Six rooms of 40 × 10G fiber, redundant core | M4500-48XF8C leaves, 8 × 100G (ACM761); 2 × M4500-32C | Spine and leaf as in the M4500 datasheet. |
 | ST 2110 devices (`PTP-BC`) + 1G encoders | M4350-16V4C for the 2110 devices, M4250 for the encoders, BC-capable core | Only the timing devices need a boundary clock. |
+
+## Editing the catalog
+
+The Excel workbook is the source. After changing it:
+
+```
+python tools/fix_xlsx_cache.py            # only if the workbook was saved with openpyxl: restores formula results
+npm i --no-save xlsx@0.18.5 && node tools/catalog_from_xlsx.js   # rebuild data/catalog.json
+node tools/build.js                       # rebuild index.html
+node tools/validation/run.js              # check the validation scenarios
+```
+
+`node tools/catalog_from_xlsx.js --check` reports whether the JSON still matches the workbook.
 
 ## Known limits
 
 - No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest. The scores for switches, cores and links are estimates; adding `List_Price_USD` to Products (and prices for optics) makes every comparison above a real cost comparison.
-- Breakout cables (QSFP28 to 4 × SFP28) are not used yet, and the M4500 is not in the catalog.
+- QSFP28 breakout (4 × 25G / 4 × 10G) is not used yet. A core that must take many 100G links plus some 10G/25G links (for example 12 × 100G and one 10G closet) has no fit today; the engine shows an error.
+- M4500 is not used for devices that need AVB or a PTP boundary clock (its datasheet lists neither), and its Sprint/Overdrive support SKUs are not added to the BoM yet.
 - With a redundant core, one 10G port for the gateway is reserved on each core, but the BoM includes one gateway cable.
 - No aggregation (spine/leaf) layer: very large networks must be designed by the ProAV Design team.

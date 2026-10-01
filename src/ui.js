@@ -181,11 +181,15 @@ function diagram(forExport,pal){
   const C=pal||(forExport?{page:cv('--bg')||'#101520',bg:cv('--bg2')||'#161d2b',box:cv('--box')||'#2B3749',line:cv('--accent')||'#26E880',txt:cv('--fg')||'#FFFFFF',mut:cv('--mut')||'#94A3B8',gw:cv('--mut')||'#94A3B8'}:{bg:'var(--bg2)',box:'var(--box)',line:'var(--accent)',txt:'var(--fg)',mut:'var(--mut)',gw:'var(--mut)'});
   const F="Outfit, Arial, sans-serif", nodes=result.accessNodes, locs=state.locations.filter(L=>nodes.some(n=>n.loc===L.name));
   if(!locs.length) return `<p class="empty">Add devices to a room to see the network.</p>`;
-  const colW=250, gap=24, W=Math.max(760,locs.length*(colW+gap)+gap), core=result.core, gwOn=state.project.gateway;
-  const yGw=30, yCore=core?140:0, yLoc=core?300:(gwOn?170:40), cx=W/2;
+  const colW=250, gap=24, W=Math.max(760,locs.length*(colW+gap)+gap), core=result.core, gwOn=state.project.gateway, gwRoom=result.gateway&&result.gateway.loc!=='core'?result.gateway:null;
+  const G=result.gateway, gwLbl=G?['1 × 10G'+(G.via==='copper'?' copper':''),G.via==='copper'?`Cat6a, ${G.dist} m`:`${G.sku}${G.via==='fiber'?', both ends':''}${G.dist&&G.loc!=='core'?`, ${G.dist} m`:''}`]:null;
+  // core box lists what plugs into it, so it grows with the number of room groups
+  // one row per room, speed and part (a room with two switch groups shows its total)
+  const cports=core&&core.ports?Object.values(core.ports.reduce((m,r)=>{ const k=[r.loc,r.speed,r.sku,!!r.isl,!!r.first].join('|'); (m[k]=m[k]||{...r,perCore:0}).perCore+=r.perCore; return m; },{})):[], CL=15, coreH=core?(cports.length?84+cports.length*CL:62):0;
+  const yGw=30, yCore=core?140:0, yLoc=core?yCore+coreH+98:(gwOn?170:40), cx=W/2;
   const box=(x,y,w,h,f,st)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${f}"${st?` stroke="${st}" stroke-width="1.5"`:''}/>`;
   const text=(x,y,t,o={})=>`<text x="${x}" y="${y}" fill="${o.c||C.txt}" font-size="${o.s||13}" font-weight="${o.w||400}" text-anchor="${o.a||'middle'}" font-family="${F}">${esc(t)}</text>`;
-  const cb=[]; if(core){ const bw=190, tot=core.k*bw+(core.k-1)*40; for(let i=0;i<core.k;i++) cb.push({x:cx-tot/2+i*(bw+40),y:yCore,w:bw,h:62}); }
+  const cb=[]; if(core){ const bw=cports.length?260:190, cg=cports.length?100:40, tot=core.k*bw+(core.k-1)*cg; for(let i=0;i<core.k;i++) cb.push({x:cx-tot/2+i*(bw+cg),y:yCore,w:bw,h:coreH}); }
   const UH=34, UG=6, EL=15; const unitH=(un,n)=>UH+un.eps.length*EL+8+(n.up.u?34:18);
   const hs=locs.map(L=>{ const ns=nodes.filter(n=>n.loc===L.name); return 44+ns.reduce((a,n)=>a+16+n.units.reduce((b,un)=>b+unitH(un,n)+UG,0),0)+(result.links.some(l=>l.loc===L.name)?52:36)+8; });
   const H=yLoc+Math.max(...hs)+(forExport?60:30);
@@ -193,7 +197,12 @@ function diagram(forExport,pal){
   const x0=(W-(locs.length*(colW+gap)+gap))/2;
   locs.forEach((L,i)=>{ const x=x0+gap+i*(colW+gap), y=yLoc, ns=nodes.filter(n=>n.loc===L.name), up=result.links.filter(l=>l.loc===L.name), tx=x+colW/2;
     if(core) cb.forEach((c,ci)=>{ const t=c.x+c.w/2; lines+=`<path d="M${tx} ${y} C ${tx} ${y-70}, ${t} ${c.y+c.h+70}, ${t} ${c.y+c.h}" fill="none" stroke="${C.line}" stroke-width="2" opacity="${ci?0.55:1}"/>`; });
-    else if(gwOn) lines+=`<line x1="${tx}" y1="${y}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+    else if(gwOn&&!gwRoom) lines+=`<line x1="${tx}" y1="${y}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+    // router on a room switch (the core has no free 10G port): draw it to that room
+    if(gwRoom&&gwRoom.loc===L.name){ // around the core: out of the router's side, across, then down the column edge
+      const left=tx<=cx, sx=left?cx-95:cx+95, ex=left?x+18:x+colW-18, ly=yGw+24;
+      lines+=`<path d="M${sx} ${ly} H${ex} V${y}" fill="none" stroke="${C.gw}" stroke-width="1.5"/>`;
+      labels+=text((sx+ex)/2,ly-19,gwLbl[0],{s:11,w:600,c:C.mut})+text((sx+ex)/2,ly-6,gwLbl[1],{s:10,c:C.mut}); }
     if(up.length&&core){ const o=up[0]; labels+=box(tx-95,y-38,190,30,C.bg)+text(tx,y-26,(()=>{ const dc=result.dualCore&&core.k>1, m={}; up.forEach(l=>m[l.speed]=(m[l.speed]||0)+(dc?l.u/2:l.u)*l.n); return Object.entries(m).sort((a,b)=>b[0]-a[0]).map(([s,q])=>`${q} × ${s}G`).join(' + ')+(dc?' to each core':''); })(),{s:11.5,w:600,c:C.line})+text(tx,y-13,`${/^TBD/.test(o.optic)?'optic to be confirmed':o.optic}${o.media==='in-rack'?', in-rack':`, ${o.dist} m ${o.media}`}`,{s:10.5,c:C.mut}); }
     s+=box(x,y,colW,hs[i],C.box)+text(x+14,y+24,L.name,{a:'start',s:15,w:700})+text(x+colW-14,y+24,L.type,{a:'end',s:11,c:C.mut});
     const line=state.project.basis!=='stream'; const gb=v=>(v>=100?Math.round(v):Math.round(v*10)/10).toLocaleString()+' Gbps';
@@ -214,9 +223,16 @@ function diagram(forExport,pal){
     s+=text(x+16,yy+17,line?'Room total at line-rate':'Room total stream bandwidth',{a:'start',s:11.5,w:600})+text(x+colW-16,yy+17,gb(tot),{a:'end',s:11.5,w:700});
     if(upCap){ const ratio=tot/upCap; s+=text(x+16,yy+33,`${result.dualCore&&core&&core.k>1?'Room uplink per core':'Room uplink capacity'}${ratio<=1?'':` (${ratio.toFixed(1)}:1)`}`,{a:'start',s:11,c:C.mut})+text(x+colW-16,yy+33,gb(upCap),{a:'end',s:11,w:600,c:ratio<=(state.project.oversub||1)+1e-9?C.line:C.txt}); }
   });
-  if(core){ cb.forEach((c,i)=>{ s+=box(c.x,c.y,c.w,c.h,C.box,C.line)+text(c.x+c.w/2,c.y+24,core.p.Model_Name,{s:13.5,w:700})+text(c.x+c.w/2,c.y+42,core.k>2?`Aggregation ${i+1}`:(core.k>1?`Core ${i?'B':'A'}`:'Core'),{s:11,c:C.mut})+text(c.x+c.w/2,c.y+56,core.psu.label,{s:10,c:C.mut}); });
+  if(core){ cb.forEach((c,i)=>{ s+=box(c.x,c.y,c.w,c.h,C.box,C.line)+text(c.x+c.w/2,c.y+24,core.p.Model_Name,{s:13.5,w:700})+text(c.x+c.w/2,c.y+42,core.k>2?`Aggregation ${i+1}`:(core.k>1?`Core ${i?'B':'A'}`:'Core'),{s:11,c:C.mut})+text(c.x+c.w/2,c.y+56,core.psu.label,{s:10,c:C.mut});
+      // port gauge and the optics/cables in this core (gateway on the first core only)
+      const rows=cports.filter(r=>!r.first||i===0); if(!rows.length) return;
+      const used=rows.reduce((a,r)=>a+r.perCore,0), tp=core.p.Total_Ports||0, gw=110, gx=c.x+12, gy=c.y+66;
+      if(tp) s+=`<rect x="${gx}" y="${gy}" width="${gw}" height="6" rx="3" fill="${C.mut}" opacity="0.25"/><rect x="${gx}" y="${gy}" width="${Math.max(3,gw*Math.min(1,used/tp))}" height="6" rx="3" fill="${C.line}"/>`+text(gx+gw+8,gy+6,`${used} of ${tp} ports used`,{a:'start',s:9.5,c:C.mut});
+      rows.forEach((r,j)=>{ const ry=gy+24+j*CL, where=r.isl?(core.k>1?(i?'Core A':'Core B'):''):r.loc;
+        s+=text(gx,ry,`${r.perCore} × ${r.speed}G ${r.sku}`,{a:'start',s:10,c:C.mut})+text(c.x+c.w-12,ry,where.length>18?where.slice(0,17)+'…':where,{a:'end',s:10,c:C.mut}); }); });
     for(let i=0;i<cb.length-1;i++){ const a=cb[i],b=cb[i+1]; lines+=`<line x1="${a.x+a.w}" y1="${a.y+22}" x2="${b.x}" y2="${b.y+22}" stroke="${C.line}" stroke-width="3"/><line x1="${a.x+a.w}" y1="${a.y+36}" x2="${b.x}" y2="${b.y+36}" stroke="${C.line}" stroke-width="3"/>`; labels+=text((a.x+a.w+b.x)/2,a.y+58,`${core.isl} × ${core.islSpeed}G`,{s:10.5,w:600,c:C.line})+text((a.x+a.w+b.x)/2,a.y+71,`needs ${Math.round(core.islReq)} Gbps`,{s:9.5,c:C.mut}); }
-    if(gwOn) lines+=`<line x1="${cb[0].x+cb[0].w/2}" y1="${yCore}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5"/>`; }
+    if(gwOn&&!gwRoom){ const gx=cb[0].x+cb[0].w/2; lines+=`<line x1="${gx}" y1="${yCore}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5"/>`;
+      if(gwLbl) labels+=box((gx+cx)/2-95,yGw+64,190,30,C.bg)+text((gx+cx)/2,yGw+76,gwLbl[0],{s:11.5,w:600,c:C.mut})+text((gx+cx)/2,yGw+89,gwLbl[1],{s:10.5,c:C.mut}); } }
   if(gwOn) s+=box(cx-95,yGw,190,48,C.box)+text(cx,yGw+21,'PR460X Pro Router',{s:13,w:700})+text(cx,yGw+37,'Internet gateway',{s:10.5,c:C.mut});
   const foot=forExport&&!pal?text(20,H-22,`${state.project.name||'Project'}: estimate only, must be validated by the ProAV Design team before ordering. Catalog ${CATMETA.version}.`,{a:'start',s:11,c:C.mut}):'';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Network diagram">${forExport?`<style>@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;display=swap');</style><rect width="100%" height="100%" fill="${C.page}"/>`:''}${lines}${s}${labels}${foot}</svg>`;

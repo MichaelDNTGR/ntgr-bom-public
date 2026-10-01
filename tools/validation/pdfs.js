@@ -10,7 +10,7 @@ const SC=require('./scenarios.js'), OUT=require('path').join(__dirname,'../../do
   await pg.waitForFunction('window.jspdf && window.jspdf.jsPDF.API.autoTable');
   for(const s of SC){
     const b64=await pg.evaluate(async s=>{
-      state={project:{...DEFAULT().project,...s.project},endpoints:CAT.Endpoints.map(e=>({...e})),locations:s.locations}; run();
+      state={project:{...DEFAULT().project,...s.project},endpoints:[...CAT.Endpoints,...s.extraEndpoints].map(e=>({...e})),locations:s.locations}; run();
       const blob=await buildPdf(); const u=new Uint8Array(await blob.arrayBuffer()); let x=''; for(let i=0;i<u.length;i+=0x8000) x+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(x);
     },s);
     const f=`${OUT}/${s.id}-${s.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-$/,'')}.pdf`;
