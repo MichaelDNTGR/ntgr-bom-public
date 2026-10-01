@@ -23,7 +23,7 @@ The BoM builder turns a list of AV devices per room into a NETGEAR switch design
 
 - **Line-rate (default):** every device counts at its full link speed, so the design is non-blocking. Stream mode uses each device's typical stream bandwidth instead.
 - **Uplink groups use 1, 2, 4 or 8 links,** so link aggregation (LAG) hashing spreads traffic evenly. The lowest uplink speed that fits is used first (10G before 25G/100G).
-- **Redundant core:** each switch has a full-capacity link group to each core switch, so either core can carry all traffic if the other fails. No stacking is used, which keeps AVB and PTP available. Because the two cores already cover each other, core switches do not need redundant power supplies; redundant power applies to the room switches and to a single core.
+- **Redundant core:** each switch has a full-capacity link group to each core switch, so either core can carry all traffic if the other fails. No stacking is used, which keeps AVB and PTP available.
 
 ```
 Example: 16 × 1G encoders + 8 × Dante devices on one switch

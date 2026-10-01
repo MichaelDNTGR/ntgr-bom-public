@@ -345,8 +345,6 @@ function islRequired(dem,S){
 function solveCore(cat,PT,dem,S,forced){
   const list=forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'core').filter(p=>PT.some(t=>t.up&&t.media==='Fiber'&&N(p[t.col])>0));
   const cores=S.dualCore?2:1; let best=null, psuFail=false;
-  // a redundant core pair already survives a PSU failure (the other core takes over), so only a single core needs redundant power
-  const SC={...S,psuRed:!!S.psuRed&&!S.dualCore};
   const speeds=Object.keys(dem.links).map(Number).sort((a,b)=>b-a);
   for(const p of list){
     const ups=PT.filter(t=>t.up&&N(p[t.col])>0);
@@ -371,7 +369,7 @@ function solveCore(cat,PT,dem,S,forced){
         }
         if(!fits.length) continue;
         const pick=fits.find(f=>hasOptic(cat,f.s,'DAC',3,true))||fits[0]; islSpeed=pick.s; isl=pick.n; }
-      const psu=psuPick(cat,p,0,SC); if(!psu){ psuFail=true; continue; }
+      const psu=psuPick(cat,p,0,S); if(!psu){ psuFail=true; continue; }
       const sc=k*scoreUnit(p,psu);
       if(!best||sc<best.score) best={p,k,psu,islSpeed,isl,islReq,score:sc};
       break;
@@ -483,7 +481,7 @@ function designOnce(cat,state,upPref){
   if(!standalone && units>0 && !errors.length){
     const forcedCore=S.coreOverride&&S.coreOverride!=='Auto'?S.coreOverride:null;
     core=solveCore(cat,PT,coreDem,S,forcedCore);
-    if(core&&core.fail==='psu'){ errors.push({loc:'Core',msg:`${forcedCore?cat.Products.find(p=>p.Product_ID===forcedCore).Model_Name+' has':'The core switches that fit have'} a single fixed power supply, so ${forcedCore?'it':'they'} cannot be used with redundant power on. Choose a core with a PSU module slot, turn on redundant core (two cores cover a PSU failure), or turn off redundant power.`}); core=null; }
+    if(core&&core.fail==='psu'){ errors.push({loc:'Core',msg:`${forcedCore?cat.Products.find(p=>p.Product_ID===forcedCore).Model_Name+' has':'The core switches that fit have'} a single fixed power supply, so ${forcedCore?'it':'they'} cannot be used with redundant power on. Choose a core with a PSU module slot, or turn off redundant power.`}); core=null; }
     else if(core){ const p=core.p, loc=mdfName+' (core)';
       add(regionSku(cat,p.Product_ID,S),`${p.Model_Name} core switch`,core.k,'Switches',loc);
       for(const m of core.psu.modules){ const a=psuSku(cat,m.base,S); add(a.Orderable_SKU,a.Description,m.qty*core.k,'Power',loc,'PSU module (redundancy)'); }
@@ -505,7 +503,6 @@ function designOnce(cat,state,upPref){
   if(S.family!=='Auto') notes.push({lvl:'info',msg:`Only ${S.family} switches were considered, for access and core.`});
   if(S.psuRed&&S.psuScope==='mdf') notes.push({lvl:'info',msg:'Redundant power applies to the main equipment room and core switches only. Closet switches use a single power supply; their PoE is sized to the full budget.'});
   if(S.psuRed) notes.push({lvl:'info',msg:'Redundant power: PoE is sized to the budget that remains if one power supply fails.'});
-  if(S.psuRed&&S.dualCore&&core) notes.push({lvl:'info',msg:'Core switches do not need redundant power supplies: with two cores, the other core carries all traffic if one loses power.'});
   for(const pw of power) if(pw.head!==null&&pw.head<0.1&&pw.poe>0) notes.push({lvl:'warn',msg:`${pw.loc}: ${pw.model} PoE headroom is only ${(pw.head*100).toFixed(0)}%.`});
   const totalEps=locs.reduce((s,L)=>s+L.items.reduce((a,i)=>a+N(i.qty),0),0);
   return {dualCore:!!S.dualCore,bom,links,power,notes,errors,core,accessNodes,standalone,totalEps,settings:T};
