@@ -456,6 +456,47 @@ function buildXlsx(){ if(!window.XLSX){ toast('Spreadsheet library did not load.
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Level','Message'],...result.errors.map(e=>['error',e.loc+': '+e.msg]),...result.notes.map(n=>[n.lvl,n.msg])]),'Checks');
   return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})]); }
 function exportXlsx(){ const b=buildXlsx(); if(b){ saveFile(`${slug()}-bom.xlsx`,b); track('bom'); } }
+// ---------- NETGEAR AV offer (PDF report intro and support pages) ----------
+// Sources: NETGEAR AV Overview (Apr 2026) and NETGEAR Premium Support and Warranty Guide (23 Mar 2026).
+// Customer-facing copy: keep it in line with those documents; no partner pricing here.
+const AV_OFFER={
+  headline:['Networking engineered for','AV over IP'],
+  intro:'NETGEAR AV switches, routers and WiFi access points are built specifically for networked media and AV, with out-of-the-box performance and easy setup for even the most complex installation. NETGEAR works with AV manufacturers and integration partners around the world, and supports the partners and associations that make the Pro AV and broadcast industries work.',
+  benefits:[
+    ['Optimized for AV over IP','Low-latency switching for audio, video and control, with PoE+ (30 W) and Ultra PoE++ (90 W) per port options.'],
+    ['Certified AV profiles','NETGEAR AV OS with configuration profiles certified by leading AV manufacturers (Audinate, Crestron, Q-SYS, SMPTE ST 2110, NDI).'],
+    ['Multicast that just works','NETGEAR IGMP Plus stops multicast flooding automatically, and Auto-LAG and Auto-Trunk connect switches without manual setup.'],
+    ['Free central management','The NETGEAR Engage Controller manages switches, routers and WiFi 7 access points from one screen, and can set up the network before the hardware arrives.'],
+    ['Scales with the project','From a single rack to redundant, active-active cores with 10G, 25G and 100G uplinks.'],
+    ['Lower total cost','Energy-efficient hardware, a lifetime warranty on managed switches and less need for specialist IT resources.']],
+  verticals:['Broadcast and live events','Corporate and commercial AV','Higher education','Medical','Unified communications','High-end residential'],
+  help:'NETGEAR has a dedicated Pro AV and broadcast network design team, pre-sales support and technical assistance. Free on-demand training and certification at academy.netgear.com covers networking basics through in-depth troubleshooting, and the top courses are AVIXA-accredited for CTS renewal units.',
+  supportIntro:'Every NETGEAR managed switch includes a lifetime hardware warranty and complimentary support to get you started. Premium Support tiers add guaranteed response times, longer support hours and faster hardware replacement, so you can match support to how critical the system is.',
+  // [feature, warranty, Sprint, Overdrive, Fastlane]; true = included, false = not included
+  tiers:[
+    ['Complimentary setup support',true,true,true,true],
+    ['AI-driven chat support',true,true,true,true],
+    ['Direct access to support engineers',false,true,true,true],
+    ['Support hours','','24/5','24/7','24/7'],
+    ['Guaranteed response time (P1)','','8 hours','2 hours','Custom'],
+    ['Priority case handling',false,false,true,true],
+    ['Escalation to senior engineers','','','Level 2','Level 3'],
+    ['Hardware replacement','Fast RMA','Advance replacement','Next business day','Custom'],
+    ['Scheduled support calls',false,false,true,true],
+    ['Operational reports','','','Quarterly','Custom'],
+    ['Designated or dedicated engineer',false,false,false,true],
+    ['Custom workflows and SLAs',false,false,false,true]],
+  supportNote:'Managed and enterprise products include 90 days of complimentary phone, chat and online support. Fully managed switches include 3 years of Sprint Support. Sprint and Overdrive response times are engagement commitments for Priority 1 cases.',
+  services:[
+    ['Deployment services','Design validation, hands-on configuration and readiness testing, so the network is production-ready from day one. Remote, onsite or hybrid.'],
+    ['Health checks and optimization','Proactive network audits that find issues before they become outages, with a clear remediation plan.'],
+    ['Custom training and enablement','Training based on your deployed system: architecture walkthroughs, feature deep dives, best practices and troubleshooting.'],
+    ['Interoperability, staging and migration','Multi-vendor compatibility checks, staged configurations and low-risk migrations to NETGEAR.'],
+    ['Event services','Pre-event validation and real-time onsite or remote engineering support for live broadcasts, sporting events and other high-stakes shows.'],
+    ['Fastlane professional engagement','A high-touch engagement with senior engineering access for organizations that need deeper collaboration.']],
+  serviceSkus:[['PSP1104-10000S','On-site engineering assistance, full day'],['PRC0001-10000S','New remote configuration, full day']],
+  servicesNote:'Pricing depends on project scope and the level of support, and includes travel and expenses. Ask your NETGEAR contact or distributor for a quote.'
+};
 // ---------- PDF report ----------
 // Renders an SVG string to a PNG data URL (the diagram goes into the PDF as a sharp raster image).
 function svgToPng(svg,w,h,scale){ return new Promise((ok,no)=>{ const img=new Image();
@@ -506,7 +547,43 @@ async function buildPdf(v={}){
   tiles.forEach(([val,l],i)=>{ const x=M+8+i*(tw+tg); doc.setFillColor(...G6); doc.roundedRect(x,ty,tw,52,6,6,'F'); font('bold',16,WH); doc.text(val,x+10,ty+25); font('normal',7,G4); doc.text(l,x+10,ty+40,{charSpace:0.5}); });
   font('normal',7.5,G4); doc.text('Generated by the NETGEAR AV BoM builder',M+8,ph()-M+8);
 
-  // --- page 2: summary ---
+  // --- page 2: NETGEAR AV introduction (copy from NETGEAR AV Overview, Apr 2026; see AV_OFFER) ---
+  doc.addPage(fmtName,'portrait'); y=M+16;
+  font('bold',8,AVD); doc.text('WHY NETGEAR AV',M,y+8,{charSpace:1}); y+=30;
+  font('normal',22,INK); doc.text(AV_OFFER.headline[0],M,y); const hw=doc.getTextWidth(AV_OFFER.headline[0]+' '); font('bold',22,INK); doc.text(AV_OFFER.headline[1],M+hw,y); y+=20;
+  para(AV_OFFER.intro,{s:10,c:INK,after:16});
+  const bw2=(pw()-2*M-12)/2, bh2=74;
+  AV_OFFER.benefits.forEach(([t,d],i)=>{ const x=M+(i%2)*(bw2+12), by=y+Math.floor(i/2)*(bh2+10);
+    doc.setFillColor(...G1); doc.roundedRect(x,by,bw2,bh2,6,6,'F'); doc.setFillColor(...AVD); doc.circle(x+16,by+19,3,'F');
+    font('bold',10.5,INK); doc.text(t,x+26,by+22); font('normal',8.5,G6); doc.text(doc.splitTextToSize(d,bw2-40).slice(0,3),x+26,by+37); });
+  y+=Math.ceil(AV_OFFER.benefits.length/2)*(bh2+10)+12;
+  // what this design uses, from the BoM
+  const fam=[...new Set(result.bom.filter(b=>b.cat==='Switches').map(b=>(String(b.desc).match(/^(M\d{4})/)||[])[1]).filter(Boolean))].sort();
+  const ap=[...new Set(result.bom.filter(b=>b.cat==='Wireless').map(b=>String(b.desc).replace(/^NETGEAR\s+/,'').replace(/\s+AP$/,'')))];
+  const gw=result.bom.some(b=>b.cat==='Gateway');
+  const uses=[fam.length?`${fam.join(' and ')} switches`:'',ap.length?`${ap.join(', ')} access points`:'',gw?'the PR460X Pro Router':''].filter(Boolean);
+  if(uses.length){ h3('In this design');
+    para(`This design uses ${uses.length>1?uses.slice(0,-1).join(', ')+' and '+uses.slice(-1):uses[0]}, all managed for free from one screen in the NETGEAR Engage Controller with NETGEAR AV OS.`,{s:10,c:INK,after:14}); }
+  h3('Built for every space');
+  para(AV_OFFER.verticals.join('   ·   '),{s:9.5,c:INK,after:14});
+  h3('Help from design to deployment');
+  para(AV_OFFER.help,{s:9.5,c:INK});
+
+  // --- page 3: support and services ---
+  doc.addPage(fmtName,'portrait'); y=M+16; h2('Support and services');
+  para(AV_OFFER.supportIntro,{s:9.5,c:INK,after:12});
+  const CK={content:'',ck:true}, tierCols=['Warranty (included)','Sprint','Overdrive','Fastlane'];
+  y=at({startY:y,head:[['',...tierCols]],body:AV_OFFER.tiers.map(r=>r.map((v,i)=>v===true?CK:v===false?'':i?v:{content:v,styles:{textColor:G6}})),
+    headStyles:{...tbl.headStyles,fontStyle:'bold',textColor:INK,halign:'center'},columnStyles:{0:{cellWidth:150},1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'}},
+    didParseCell:d=>{ if(d.section==='head'&&d.column.index===0) d.cell.styles.halign='left'; if(d.section==='head'&&d.column.index>1) d.cell.styles.textColor=AVD; },
+    didDrawCell:d=>{ if(d.section==='body'&&d.cell.raw&&d.cell.raw.ck){ const cx=d.cell.x+d.cell.width/2, cy=d.cell.y+d.cell.height/2; doc.setDrawColor(...AVD); doc.setLineWidth(1.4); doc.lines([[2.6,2.8],[5.4,-6]],cx-4,cy+0.4); } }})+8;
+  para(AV_OFFER.supportNote,{after:18});
+  h3('Professional services');
+  y=at({startY:y,body:AV_OFFER.services.map(([t,d])=>[t,d]),columnStyles:{0:{cellWidth:150,fontStyle:'bold'},1:{textColor:G6}}})+8;
+  y=at({startY:y,head:[['Part number','Service']],body:AV_OFFER.serviceSkus,columnStyles:{0:{cellWidth:150,fontStyle:'bold'}}})+8;
+  para(AV_OFFER.servicesNote);
+
+  // --- design summary ---
   doc.addPage(fmtName,'portrait'); y=M+16; h2('Design summary');
   const dis=ok?`This design was validated by the Pro AV Design team on ${longDate(when)}. Pricing and availability are provided by NETGEAR or your distributor.`
     :`Estimate for planning only. ${T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the Pro AV Design team before ordering.'} Validation: ${MAIL()}`;
