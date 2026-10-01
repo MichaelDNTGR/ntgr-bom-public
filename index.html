@@ -281,7 +281,8 @@ function evalN(cat,PT,p,D,n,S,ctx){
   }
   const needW=D.poeW/n*(1+S.poeHead/100);
   const psu=psuPick(cat,p,needW,S); if(!psu) return null;
-  const modCost=Object.values(A.mods).reduce((a,b)=>a+b,0)*0.8;
+  // RJ45 SFP modules are a fallback: a switch with native copper ports should win whenever one fits
+  const modCost=Object.values(A.mods).reduce((a,b)=>a+b,0)*4;
   return {p,n,up,psu,mods:A.mods,poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?8:0)+(S.upPref==='fast'?up.u*0.5:0))};
 }
 function bestFor(cat,PT,D,S,ctx,forced){
@@ -302,7 +303,7 @@ function demandOf(items,S,noSpare){
     D.poeW+=w*q; D.count+=q; D.bw+= q*(S.basis==='stream'? N(ep.Stream_Mbps)/1000 : spd);
   }
   D.classes=Object.values(map).map(c=>({...c,q:ceil(c.q*sp)}));
-  D.poeAt=ceil(D.poeAt*sp); D.poeBt=ceil(D.poeBt*sp);
+  // spare ports apply to the port count only; PoE ports are sized to the devices actually listed
   return D;
 }
 function poolKey(it){ const f=/fiber/i.test(it.ep.Media||''), s=N(it.ep.Link_Speed_Gbps); return f?'Fiber endpoints':(s>2.5?'Multi-gig copper endpoints':'1G / 2.5G copper endpoints'); }
@@ -437,10 +438,14 @@ function designOnce(cat,state,upPref){
   let standalone=false;
   // redundant power can apply everywhere or only in the main equipment room (MDF + core)
   const SL=L=>({...S,psuRed:!!S.psuRed&&(S.psuScope!=='mdf'||L.type==='MDF')});
-  let res=locs.map(L=>({L,...solveLocation(cat,PT,L.items,SL(L),ctxFor(L,false),ovr(L))}));
-  const units=res.reduce((s,r)=>s+r.groups.reduce((a,g)=>a+g.best.n,0),0);
+  const countUnits=rs=>rs.reduce((s,r)=>s+r.groups.reduce((a,g)=>a+g.best.n,0),0);
   const active=locs.filter(L=>L.items.some(i=>N(i.qty)>0)).length;
-  if(units===1 && active<=1){ standalone=true; res=locs.map(L=>({L,...solveLocation(cat,PT,L.items,SL(L),ctxFor(L,true),ovr(L))})); }
+  let res=null;
+  // a single room that fits on one switch needs no uplinks or core, so try that first
+  if(active<=1){ const solo=locs.map(L=>({L,...solveLocation(cat,PT,L.items,SL(L),ctxFor(L,true),ovr(L))}));
+    if(countUnits(solo)===1){ standalone=true; res=solo; } }
+  if(!res) res=locs.map(L=>({L,...solveLocation(cat,PT,L.items,SL(L),ctxFor(L,false),ovr(L))}));
+  const units=countUnits(res);
   const errors=res.filter(r=>r.err).map(r=>({loc:r.L.name,msg:r.err}));
   const coreDem={links:{},gw:S.gateway,total:0,maxSw:0}; const accessNodes=[];
   const support=(p,qty,loc)=>{ if(!S.support) return; const c=String(p.Support_Category||'').match(/(\d)/); if(!c) return; const sku=supPat.replace('{years}',S.support).replace('{cat}',c[1]); const a=cat.Accessories.find(x=>x.Orderable_SKU===sku); add(sku,a?a.Description:`Support ${S.support}-year`,qty,'Support',loc); };
@@ -459,8 +464,11 @@ function designOnce(cat,state,upPref){
       }
       const D0=demandOf(g.items,S,true);
       for(const c of D0.classes.filter(c=>c.media==='Fiber')){ const o=pickLink(cat,c.speed,'MMF',100,false); add(o.sku,o.desc,c.q,'Optics',L.name,o.tbd?'Not in catalog yet':`Switch-side optic for ${c.speed}G fiber endpoints`); if(o.tbd) notes.push({lvl:'warn',msg:`${L.name}: no ${c.speed}G endpoint optic in the catalog.`}); }
-      for(const [spd,perUnit] of Object.entries(b.mods||{})){ const a=CUM[spd]; const actual=D0.classes.filter(c=>c.media==='Copper'&&!c.poe&&c.speed==spd).reduce((s,c)=>s+c.q,0);
-        const q=Math.min(perUnit*b.n,actual); if(a&&q){ add(a.Orderable_SKU,a.Description,q,'Optics',L.name,`For ${spd}G copper devices on fiber ports${a.Reach_m?` (max ${a.Reach_m} m cable)`:''}`); notes.push({lvl:'info',msg:`${L.name}: ${q} × ${spd}G copper device(s) connect to SFP ports using ${a.Orderable_SKU} RJ45 modules (no PoE on these ports).`}); } }
+      const DS=demandOf(g.items,S);
+      for(const [spd,perUnit] of Object.entries(b.mods||{})){ const a=CUM[spd]; const cu=d=>d.classes.filter(c=>c.media==='Copper'&&!c.poe&&c.speed==spd).reduce((s,c)=>s+ceil(c.q/b.n)*b.n,0);
+        // native copper ports take real devices first; modules only cover devices beyond them, never spare ports
+        const native=cu(DS)-perUnit*b.n, actual=D0.classes.filter(c=>c.media==='Copper'&&!c.poe&&c.speed==spd).reduce((s,c)=>s+c.q,0);
+        const q=Math.max(0,Math.min(perUnit*b.n,actual-native)); if(a&&q){ add(a.Orderable_SKU,a.Description,q,'Optics',L.name,`For ${spd}G copper devices on fiber ports${a.Reach_m?` (max ${a.Reach_m} m cable)`:''}`); notes.push({lvl:'info',msg:`${L.name}: ${q} × ${spd}G copper device(s) connect to SFP ports using ${a.Orderable_SKU} RJ45 modules (no PoE on these ports).`}); } }
       support(p,b.n,L.name);
       power.push({red:SL(L).psuRed,loc:L.name,model:p.Model_Name,n:b.n,poe:b.poeLoadUnit,cfg:b.psu.label,eps:b.psu.eps,prot:b.psu.prot,budget:b.psu.budget,
         head:b.psu.budget?((b.psu.budget-b.poeLoadUnit)/b.psu.budget):null,est:N(p.Power_Max_NoPoE_W)+b.poeLoadUnit/eff,max:N(p.Power_Max_FullPoE_W)||N(p.Power_Max_NoPoE_W),ru:N(p.Rack_Units),half:/Half/.test(p.Width_Class||'')});
