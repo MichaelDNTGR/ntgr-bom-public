@@ -125,4 +125,10 @@ module.exports = [
   S('V39','Prefer 25G, one closet beyond multimode reach',
     'Uplink speed "Prefer 25G": closets move to 25G-capable switches. Closet 2 (600 m SMF) gets the optic.ca 25G LR; Closet 1 (150 m MMF) gets a placeholder naming a third-party 25GBASE-eSR module (300 m on OM4), with a warning.',
     {spare:0, upSpeed:'25'}, [MDF(), L('Closet 1','IDF',150,'MMF',[['EP-1G-TX',10]]), L('Closet 2','IDF',600,'SMF',[['EP-1G-TX',15]])]),
+  S('V40','16 x 10G copper encoders in one closet, priced',
+    'With prices, one M4350-24X8F8V on 8 x 25G beats 2 x M4350-8X8F with 16 x 10G uplinks (32 optics): fewer switches, optics and fiber pairs.',
+    {spare:0}, [MDF(), L('Closet 1','IDF',100,'MMF',[['EP-1G-TX',10]]), L('Closet 3','IDF',100,'MMF',[['EP-10G-TX',16]])]),
+  S('V41','Long single-mode run, 500G closet',
+    '50 x 10G encoders at 600 m single mode: 2 x M4350-40X4C on 4 x 100G LR4 each, not 5 half-empty M4350-24X4V on 4 x 25G LR (40 long-reach optics).',
+    {spare:0}, [MDF(), L('Closet 1','IDF',150,'MMF',[['EP-10G-TX',20]]), L('Closet 2','IDF',600,'SMF',[['EP-10G-TX',50]])]),
 ];

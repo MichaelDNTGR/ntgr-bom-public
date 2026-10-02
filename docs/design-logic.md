@@ -122,14 +122,15 @@ Devices without a timing need still go to the cheapest switch: in a mixed room, 
 
 ### Scoring: "best fit"
 
-- **With list prices in the catalog:** the score is the price, plus the cost of PSU modules.
-- **Without list prices** (current catalog), the score per unit is:
+Designs are compared on cost. `Cost_Index` in Products and Accessories is a relative cost scale, derived internally from NETGEAR US list prices and estimates for third-party optics that have no public price. It is not a price and is not shown to users. The real prices are kept in a private workbook; `tools/publish_costs.py` builds the public catalog from it.
 
-  `10 + 0.35 × ports + fabric Gbps ÷ 150 + max PoE W ÷ 150 + 6 (if M4350) + PSU module cost`
+- **Per switch:** switch cost + PSU modules + `Per_Switch_Overhead` (rack space, power, patching, setup).
+- **Per uplink:** two optics, or one DAC/AOC cable.
+- **Copper RJ45 modules:** module cost plus a penalty, so switches with native copper ports win.
+- **Penalties:** a placeholder optic (not in the catalog) and a missed preferred uplink speed weigh about as much as several switches, so they only win when nothing else fits.
+- **Unpriced items** are estimated: a switch from its size (`10 + 0.35 × ports + fabric Gbps ÷ 150 + max PoE W ÷ 150 + 6 if M4350`), an optic or cable from priced parts of the same kind by speed. Internally all costs are converted to score points with one factor (the median cost per point over switches with a cost).
 
-  plus 4 per copper RJ45 module, 0.4 + speed ÷ 40 per uplink (two optics and a fiber pair), and 40 if an uplink optic is not in the catalog. The total is multiplied by the number of units.
-
-This favors the smallest switch that passes all checks, and M4250 over M4350 when both fit.
+The engine builds the whole design with four uplink strategies (slowest speed, fewest links, fastest speed, cheapest links), tries each room's close alternatives, and keeps the cheapest complete design.
 
 ### Neutrik etherCON rooms
 
@@ -192,8 +193,8 @@ Example: 7 Dante devices in the main room and 7 in a closet, stream bandwidth: t
 
 Room switches and the core are scored together, because a room's cheapest switch can force a bigger core.
 
-1. The whole design is built three times, with room uplinks on the **slowest** speed that fits, the **fewest** links, and the **fastest** speed. The design with the lowest total score (rooms + core + uplinks) wins. A faster option must be clearly cheaper, so near-ties keep the slower uplinks.
-2. For each room with one switch group, the engine then tries the room's next three "Also fits" switches on the whole design, and keeps any that lowers the total. Example: an M4350-36X4V on 4 × 25G scores lower for the room alone, but it needs an M4350-16V4C core. The M4350-24X8F8V on 8 × 10G lets the smaller M4350-24F4V terminate everything, so the whole design wins.
+1. The whole design is built four times, with room uplinks on the **slowest** speed that fits, the **fewest** links, the **fastest** speed (each uplink also counts the core port it uses, so this one wins when core ports run out), and the **cheapest** links. The design with the lowest total cost (rooms + core + uplinks) wins. Near-ties keep the slower uplinks.
+2. For each room with one switch group, the engine then tries the room's next three "Also fits" switches on the whole design, and keeps any that lowers the total, so a room's cheapest switch cannot force an expensive core.
 3. If no strategy finds a core, the engine shows an error suggesting 2:1 oversubscription, Best fit, or an aggregation layer.
 
 ## 4. Building the BoM
@@ -259,7 +260,8 @@ Example: NETGEAR ACM761 (100G SR4) is listed for M4500 only, and the optic.ca NG
 | Two closets + router, redundant core and power | 2 × M4350-24F4V core | Each core needs 5 × 10G (2 uplinks, 2 core-to-core, 1 router). The 24F4X has only 4. Fixed-PSU models (8X8F, 12X12F, 16XF) are excluded by redundant power. |
 | Three closets + router, single core, 10G uplinks | M4350-24F4V core | The 24F4X has exactly the 4 × 10G ports needed, but its 24 × 1/2.5G ports are wasted at 10G, so it scores worse. |
 | Audio-only closets, stream bandwidth, `Min_Uplink_Gbps` = 1 | M4350-24F4X core | Its 1/2.5G SFP ports carry the 1G uplinks, so none are wasted. With the default of 10, uplinks are 10G and the core is a 10G model. |
-| Closets of 90G, 80G and 8G, single core | 4 × 25G, 8 × 10G, 1 × 10G; M4350-24F4V core | The 80G closet stays on 10G because 25G there would need a bigger core. |
+| Closets of 90G, 80G and 8G, single core | 4 × 25G, 4 × 25G, 1 × 10G; M4350-32F8V core | With prices, 4 × 25G optics plus a core with 8 × SFP28 cost less than 8 × 10G. |
+| 16 × 10G copper encoders in one closet | 1 × M4350-24X8F8V on 8 × 25G | Cheaper than 2 × M4350-8X8F with 16 × 10G uplinks (32 optics). |
 | 90G closet at 150 m multimode | 2 switches, 8 × 10G each | 25G SR reaches 100 m, so splitting at 10G avoids a placeholder optic. |
 | Six 60G closets, redundant core | 8 × 25G each; 2 × M4500-48XF8C core | 48 × 25G ports per core; no M4350 has that many. |
 | Six rooms of 40 × 10G fiber, redundant core | M4500-48XF8C leaves, 8 × 100G (ACM761); 2 × M4500-32C | Spine and leaf as in the M4500 datasheet. |
@@ -267,9 +269,10 @@ Example: NETGEAR ACM761 (100G SR4) is listed for M4500 only, and the optic.ca NG
 
 ## Editing the catalog
 
-The Excel workbook is the source. After changing it:
+The Excel workbook is the source. Prices are edited only in the private copy (`catalog/private/NETGEAR_BoM_Catalog_official_pricing.xlsx`, never committed); everything else can be edited in either, but keep the two in step. After changing it:
 
 ```
+python tools/publish_costs.py             # private workbook -> public catalog with Cost_Index (no prices)
 python tools/fix_xlsx_cache.py            # only if the workbook was saved with openpyxl: restores formula results
 npm i --no-save xlsx@0.18.5 && node tools/catalog_from_xlsx.js   # rebuild data/catalog.json
 node tools/build.js                       # rebuild index.html
@@ -280,7 +283,7 @@ node tools/validation/run.js              # check the validation scenarios
 
 ## Known limits
 
-- No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest. The scores for switches, cores and links are estimates; adding `List_Price_USD` to Products (and prices for optics) makes every comparison above a real cost comparison.
+- Costs for third-party optics are estimates. Update them in the private pricing workbook when quotes are available.
 - Neutrik opticalCON field cables are not in the catalog, and the APM414C (10GBASE-T) card is not chosen by the tool.
 - On the M4350, AVB uses only one link of a LAG (the others are backup); the engine still sizes AVB uplinks on the LAG total.
 - QSFP28 breakout (4 × 25G / 4 × 10G) is not used yet. A core that must take many 100G links plus some 10G/25G links (for example 12 × 100G and one 10G closet) has no fit today; the engine shows an error.

@@ -18,9 +18,9 @@ const avbNoLag = p => /not on LAG/i.test(String(p.AVB||''));
 function timingOk(p,D){ return (!D.needBC||hasBC(p)) && (!D.needAVB||hasAVB(p)); }
 // relative cost of one uplink (two optics plus a fiber pair) when the catalog has no prices
 const linkCost = s => 0.4 + s/40;
-const CORE_PORT = 3; // "fastest uplinks" strategy: each uplink also uses a core port, so fewer, faster links win
+const CORE_PORT = 10; // "fastest uplinks" strategy: each uplink also uses a core port, so fewer, faster links win
 const TBD_PENALTY = 40;
-const PREF_MISS = 30; // preferred uplink speed not used: a switch that can run it wins unless it costs much more // a part missing from the catalog makes the design unorderable: worth more than an extra switch
+const PREF_MISS = 200; // preferred uplink speed not used: the user's choice wins whenever a switch and core can run it // a part missing from the catalog makes the design unorderable: worth more than an extra switch
 function candidates(cat,S,role){
   return cat.Products.filter(p=>p.Category==='Switch' && (p.Lifecycle_Status||'Active')==='Active'
     && (!S.taa || isTAA(p)) && (S.family==='Auto' || p.Family===S.family));
@@ -45,16 +45,46 @@ function psuPick(cat,p,needW,S){
     if(needW>budget) continue;
     const internal=/internal PSUs/.test(r.PSU_Module||'');
     const cost=internal?qty*0.1:qty*modW(r.PSU_Module)/100+qty;
-    const cand={label:r.Config_Label,eps,prot,budget,modules:(qty&&!internal)?[{base:r.PSU_Module,qty}]:[],cost};
-    if(!best||cand.cost<best.cost) best=cand;
+    const mp=(qty&&!internal)?priceOf(cat,psuSku(cat,r.PSU_Module,S).Orderable_SKU):0;
+    const cand={label:r.Config_Label,eps,prot,budget,modules:(qty&&!internal)?[{base:r.PSU_Module,qty}]:[],cost,price:(qty&&!internal)?(mp?mp*qty:null):0};
+    const cv=c=>c.price!==null&&ppu(cat)?c.price/ppu(cat):c.cost;
+    if(!best||cv(cand)<cv(best)) best=cand;
   }
   return best;
 }
-function scoreUnit(p,psu){
-  const price=N(p.List_Price_USD);
-  if(price) return price + (psu?psu.cost*150:0);
-  return 10 + (N(p.Total_Ports)||1)*0.35 + N(p.Switching_Fabric_Gbps)/150 + N(p.PoE_Budget_Max_W)/150 + (p.Family==='M4350'?6:0) + (psu?psu.cost:0);
+// Relative cost of a product or accessory: Cost_Index in the public catalog (prices scaled by one internal factor), or List_Price_USD
+const cost=x=>N(x.Cost_Index)||N(x.List_Price_USD);
+// Score units. Without prices each switch gets an estimate from its size; with a Cost_Index (or List_Price_USD) in the catalog, prices are
+// converted to the same units with one factor (USD per point, the median of price / estimate over priced switches),
+// so penalties keep their meaning ("worth about a small switch") and unpriced items still compare sensibly.
+const estUnit=p=>10 + (N(p.Total_Ports)||1)*0.35 + N(p.Switching_Fabric_Gbps)/150 + N(p.PoE_Budget_Max_W)/150 + (p.Family==='M4350'?6:0);
+function ppu(cat){
+  if(cat._ppu===undefined){ const r=cat.Products.filter(p=>p.Category==='Switch'&&cost(p)>0).map(p=>cost(p)/estUnit(p)).sort((a,b)=>a-b);
+    Object.defineProperty(cat,'_ppu',{value:r.length>=5?r[r.length>>1]:0,enumerable:false}); }
+  return cat._ppu;
 }
+// Accessory price; an unpriced optic or cable (e.g. optic.ca, quote only) is estimated from priced parts of the same kind and
+// media: same speed if any, else log-interpolated between the nearest priced speeds (or scaled by sqrt of the speed ratio).
+const kindOf=a=>a.Category==='Optic'?'O:'+a.Media:(/DAC|AOC/.test(a.Category)?'C:'+a.Category:'');
+function priceOf(cat,sku){
+  const a=cat.Accessories.find(x=>x.Orderable_SKU===sku); if(!a) return 0; if(cost(a)>0) return cost(a);
+  const k=kindOf(a), s=N(a.Speed_Gbps); if(!k||!s) return 0;
+  const pts=cat.Accessories.filter(x=>kindOf(x)===k&&cost(x)>0&&N(x.Speed_Gbps)>0&&!/pack/i.test(x.Description||'')).map(x=>[N(x.Speed_Gbps),cost(x)]);
+  if(!pts.length) return 0;
+  const at=v=>{ const q=pts.filter(p=>p[0]===v).map(p=>p[1]).sort((x,y)=>x-y); return q[q.length>>1]; };
+  if(at(s)) return at(s);
+  const lo=Math.max(0,...pts.map(p=>p[0]).filter(v=>v<s)), hi=Math.min(Infinity,...pts.map(p=>p[0]).filter(v=>v>s));
+  if(lo&&hi<Infinity) return at(lo)*Math.pow(at(hi)/at(lo),Math.log(s/lo)/Math.log(hi/lo));
+  const n=lo||hi; return at(n)*Math.sqrt(s/n);
+}
+function scoreUnit(cat,p,psu){
+  const f=ppu(cat), price=cost(p), ps=psu?(f&&psu.price!==null&&psu.price!==undefined?psu.price/f:psu.cost):0;
+  // every switch also costs rack space, power, patching and setup (Tool_Settings Per_Switch_Overhead, same units as Cost_Index)
+  const T=settings(cat), oh=f?(N(T.Per_Switch_Overhead)||N(T.Per_Switch_Overhead_USD))/f:0;
+  return (f&&price?price/f:estUnit(p)) + ps + oh;
+}
+// one uplink: two optics or one cable, priced when the catalog has prices
+function linkPts(cat,lk,speed){ const f=ppu(cat), pr=f&&!lk.tbd?priceOf(cat,lk.sku):0; return pr?pr*lk.perLink/f:linkCost(speed); }
 // greedy assign endpoint classes to port types; returns remaining counts or null
 function assign(PT,avail,classes,cuMods){
   const rem={...avail}, mods={};
@@ -113,21 +143,21 @@ function evalN(cat,PT,p,D,n,S,ctx){
       let u; if(noLag) u=need===1?(S.dualCore?2:1):0;
       else if(S.dualCore){ const per=S.lagSizes.filter(x=>x<=S.maxLag).sort((a,b)=>a-b).find(x=>x>=need); u=per?per*2:0; }
       else u=lagSizes(S).find(x=>x>=need);
-      if(u && u<=av) fits.push({speed:s,u,tbd:!hasOptic(cat,s,ctx.media,ctx.dist,ctx.inRack&&!(ctx.quad&&isNeutrik(p)),[p])});
+      if(u && u<=av){ const lk=pickLink(cat,s,ctx.media,ctx.dist,ctx.inRack&&!(ctx.quad&&isNeutrik(p)),[p]); fits.push({speed:s,u,tbd:!!lk.tbd,lp:linkPts(cat,lk,s)}); }
     }
     // strategy: slowest speed that fits (low), fewest links (fewest) or fastest speed (fast); speeds with a catalog optic first
-    const order={low:(a,b)=>a.speed-b.speed, fast:(a,b)=>b.speed-a.speed, fewest:(a,b)=>a.u-b.u||a.speed-b.speed}[S.upPref]||((a,b)=>a.speed-b.speed);
+    const order={low:(a,b)=>a.speed-b.speed, fast:(a,b)=>b.speed-a.speed, fewest:(a,b)=>a.u-b.u||a.speed-b.speed, cost:(a,b)=>a.u*a.lp-b.u*b.lp||a.speed-b.speed}[S.upPref]||((a,b)=>a.speed-b.speed);
     fits.sort((a,b)=>(a.tbd?1:0)-(b.tbd?1:0)||order(a,b));
     // preferred uplink speed (Design options): use it whenever the ports allow, even if the catalog has no optic for the distance
     const pref=N(S.upSpeed)&&fits.find(f=>f.speed===N(S.upSpeed)); if(pref){ fits.splice(fits.indexOf(pref),1); fits.unshift(pref); if(pref.tbd) pref.pref=true; }
-    up=fits[0]; if(!up) return null; if(!up.tbd) delete up.tbd;
+    up=fits[0]; if(!up) return null; if(!up.tbd) delete up.tbd; const lp=up.lp; delete up.lp; up.lp_=lp;
   }
   const free={...rem}; if(up.u){ let q=up.u; for(const t of PT.filter(t=>t.up&&supports(t,up.speed))){ const k=Math.min(q,free[t.col]||0); free[t.col]-=k; q-=k; } }
   const needW=D.poeW/n*(1+S.poeHead/100);
   const psu=psuPick(cat,p,needW,S); if(!psu) return null;
   // RJ45 SFP modules are a fallback: a switch with native copper ports should win whenever one fits
-  const modCost=Object.values(A.mods).reduce((a,b)=>a+b,0)*4;
-  return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?(up.pref?2:TBD_PENALTY):0)+(N(S.upSpeed)&&up.u&&up.speed!==N(S.upSpeed)?PREF_MISS:0)+up.u*(linkCost(up.speed)+(S.upPref==='fast'?CORE_PORT:0)))};
+  const modCost=Object.entries(A.mods).reduce((a,[sp,q])=>{ const m=ctx.cuMods&&ctx.cuMods[sp]; const pr=ppu(cat)&&typeof m==='object'?priceOf(cat,m.Orderable_SKU):0; return a+q*(4+(pr?pr/ppu(cat):0)); },0); // fallback: the module's price plus a penalty, so native copper ports win
+  return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(cat,p,psu)+modCost+(up.tbd?(up.pref?2:TBD_PENALTY):0)+(N(S.upSpeed)&&up.u&&up.speed!==N(S.upSpeed)?PREF_MISS:0)+up.u*((up.lp_!==undefined?up.lp_:linkCost(up.speed))+(S.upPref==='fast'?CORE_PORT:0)))};
 }
 // Neutrik etherCON switches (e.g. M4350-16M4V) only when the room asks for them; a Neutrik room only gets them
 const isNeutrik=p=>N(p.Neutrik_etherCON_Ports)>0;
@@ -227,7 +257,7 @@ function solveCore(cat,PT,dem,S,forced){
       // ports that cannot carry any link this design uses (e.g. 1/2.5G SFP when every uplink is 10G) are wasted
       const linkSpeeds=[...speeds,...(dem.gw?[10]:[]),...(islSpeed?[islSpeed]:[])];
       const wasted=PT.filter(t=>N(p[t.col])>0&&!(t.up&&linkSpeeds.some(s=>supports(t,s)))).reduce((a,t)=>a+N(p[t.col]),0);
-      const sc=k*(scoreUnit(p,psu)+wasted*0.5);
+      const sc=k*(scoreUnit(cat,p,psu)+wasted*0.5);
       if(!best||sc<best.score) best={p,k,psu,islSpeed,isl,islReq,score:sc};
       break;
     }
@@ -285,7 +315,7 @@ function splitUnits(items,n,S){
   return units;
 }
 // Build the whole design with each uplink strategy and keep the cheapest one that works, core included.
-const STRATEGIES=['low','fewest','fast'];
+const STRATEGIES=['low','fewest','fast','cost'];
 function design(cat,state){
   const runs=STRATEGIES.map(p=>({p,r:designOnce(cat,state,p)}));
   const ok=runs.filter(x=>!x.r.errors.length);
@@ -324,7 +354,7 @@ function designOnce(cat,state,upPref){
   const epById=Object.fromEntries(state.endpoints.map(e=>[e.Endpoint_ID,e]));
   const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||''}; bom.push(l);} l.qty+=qty; };
   const locs=state.locations.map(L=>({...L,items:L.eps.map(x=>({ep:epById[x.ep],qty:x.qty})).filter(x=>x.ep)}));
-  const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,true]));
+  const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,CUM[k]]));
   const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik',quad:L.card==='quad'}; };
   const ovr=L=>L.override&&L.override!=='Auto'?L.override:null;
   let standalone=false;

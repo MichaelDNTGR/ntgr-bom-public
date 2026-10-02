@@ -229,7 +229,7 @@ function diagram(forExport,pal){
       const left=tx<=cx, sx=left?cx-95:cx+95, ex=left?x+18:x+colW-18, ly=yGw+24;
       lines+=`<path d="M${sx} ${ly} H${ex} V${y}" fill="none" stroke="${C.gw}" stroke-width="1.5"/>`;
       labels+=text((sx+ex)/2,ly-19,gwLbl[0],{s:11,w:600,c:C.mut})+text((sx+ex)/2,ly-6,gwLbl[1],{s:10,c:C.mut}); }
-    if(up.length&&core){ const o=up[0]; labels+=box(tx-95,y-38,190,30,C.bg)+text(tx,y-26,(()=>{ const dc=result.dualCore&&core.k>1, m={}; up.forEach(l=>m[l.speed]=(m[l.speed]||0)+(dc?l.u/2:l.u)*l.n); return Object.entries(m).sort((a,b)=>b[0]-a[0]).map(([s,q])=>`${q} × ${s}G`).join(' + ')+(dc?' to each core':''); })(),{s:11.5,w:600,c:C.line})+text(tx,y-13,`${/^TBD/.test(o.optic)?'optic to be confirmed':o.optic}${o.media==='in-rack'?', in-rack':`, ${o.dist} m ${o.media}`}`,{s:10.5,c:C.mut}); }
+    if(up.length&&core){ const o=up[0]; labels+=box(tx-95,y-38,190,30,C.bg)+text(tx,y-26,(()=>{ const dc=result.dualCore&&core.k>1, m={}; up.forEach(l=>m[l.speed]=(m[l.speed]||0)+(dc?l.u/2:l.u)*l.n); return Object.entries(m).sort((a,b)=>b[0]-a[0]).map(([s,q])=>`${q} × ${s}G`).join(' + ')+(dc?' to each core':''); })(),{s:11.5,w:600,c:C.line})+text(tx,y-13,`${/^TBD/.test(o.optic)?'third-party module needed':o.optic}${o.media==='in-rack'?', in-rack':`, ${o.dist} m ${o.media}`}`,{s:10.5,c:C.mut}); }
     s+=box(x,y,colW,h,C.box,isCore?C.line:null)+text(x+14,y+24,L.name,{a:'start',s:15,w:700})+text(x+colW-14,y+24,L.type,{a:'end',s:11,c:C.mut});
     const line=state.project.basis!=='stream'; const gb=v=>(v>=100?Math.round(v):Math.round(v*10)/10).toLocaleString()+' Gbps';
     const cut=(t,m)=>t.length>m?t.slice(0,m-1)+'…':t;
