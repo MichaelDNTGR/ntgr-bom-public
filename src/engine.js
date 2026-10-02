@@ -115,8 +115,11 @@ function hasOptic(cat,speed,media,dist,inRack,ends){ return !pickLink(cat,speed,
 // Products and families without rows accept any catalog part.
 function compatSet(cat,p){
   if(!cat._compat){ const m={}; for(const r of cat.Compatibility||[]){ if(/not compatible/i.test(r.Relationship||'')) continue; const k=r.Scope_Type+':'+r.Scope_Value; (m[k]=m[k]||new Set()).add(String(r.Accessory_Base)); } Object.defineProperty(cat,'_compat',{value:m,enumerable:false}); }
+  // merged once per product (this is checked for every accessory on every link, so it must be cached)
+  if(!cat._compatP) Object.defineProperty(cat,'_compatP',{value:{},enumerable:false});
+  const k=p.Product_ID; if(k in cat._compatP) return cat._compatP[k];
   const a=cat._compat['Product:'+p.Product_ID], b=cat._compat['Family:'+p.Family];
-  return a||b?new Set([...(a||[]),...(b||[])]):null;
+  return cat._compatP[k]=a||b?new Set([...(a||[]),...(b||[])]):null;
 }
 const fitsEnds=(cat,a,ends)=>(ends||[]).every(p=>{ const s=p&&compatSet(cat,p); return !s||s.has(String(a.Base_Model)); });
 
@@ -285,7 +288,14 @@ function tpModule(speed,media,dist){
   if(media==='SMF') return dist<=40000?'ER':null;
   return null;
 }
+// pickLink is called for every speed of every switch candidate; its answer only depends on these inputs, so cache it per catalog
 function pickLink(cat,speed,media,dist,inRack,ends){
+  if(!cat._links) Object.defineProperty(cat,'_links',{value:new Map(),enumerable:false});
+  const key=[speed,media,dist,inRack?1:0,(ends||[]).map(p=>p&&p.Product_ID).join(',')].join('|');
+  let v=cat._links.get(key); if(!v){ v=pickLinkRaw(cat,speed,media,dist,inRack,ends); cat._links.set(key,v); }
+  return v;
+}
+function pickLinkRaw(cat,speed,media,dist,inRack,ends){
   const A=cat.Accessories.filter(a=>fitsEnds(cat,a,ends));
   // NETGEAR-branded parts before third-party (optic.ca, -OC) when both fit
   const brand=(a,b)=>(/-OC$/.test(a.Orderable_SKU)?1:0)-(/-OC$/.test(b.Orderable_SKU)?1:0);

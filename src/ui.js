@@ -120,7 +120,7 @@ document.addEventListener('input',ev=>{
   else if(t.dataset.ef){ state.locations[+t.closest('.loc').dataset.l].eps[+t.closest('.ep').dataset.e][t.dataset.ef]=val; }
   else if(t.dataset.xf){ const e=state.endpoints[+t.closest('.lr').dataset.i]; e[t.dataset.xf]=t.dataset.xf==='Link_Speed_Gbps'?+val:val; }
   else return;
-  if(t.tagName==='SELECT'||t.type==='checkbox'||t.type==='radio') run(); else { result=ENG.design(CAT,state); save(); renderResults(); later(); }
+  if(t.tagName==='SELECT'||t.type==='checkbox'||t.type==='radio') run(); else { save(); later(); } // typing: one design run 300 ms after the last keystroke
 });
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-act],[data-tab]'); if(!b) return;
