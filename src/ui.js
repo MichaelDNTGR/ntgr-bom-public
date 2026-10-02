@@ -121,7 +121,7 @@ document.addEventListener('click',ev=>{
     case 'reset': if(!confirmReset()) return; state=DEFAULT(); break;
     case 'xlsx': return exportXlsx(); case 'csv': return exportCsv(); case 'svg': return exportSvg(); case 'pdf': return exportPdf();
     case 'reqpdf': return reqPdf(b.dataset.u,b.dataset.r);
-    case 'json': return saveFile(`${slug()}-project.json`,JSON.stringify(state,null,2));
+    case 'json': return packProject(state).then(b=>saveFile(`${slug()}${PJ_EXT}`,b));
     case 'loadjson': return $('#fjson').click();
     case 'request': return openModal();
     case 'close': return closeModal();
@@ -329,7 +329,7 @@ async function buildPackage(){
     {n:`${base}-bom.xlsx`,d:await xl.arrayBuffer(),t:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
     {n:`${base}-network.svg`,d:diagram(true),t:'image/svg+xml'},
     ...(pdf?[{n:`${base}-report.pdf`,d:await pdf.arrayBuffer(),t:'application/pdf'}]:[]),
-    {n:`${base}-project.json`,d:JSON.stringify(state,null,2),t:'application/json'},
+    {n:`${base}${PJ_EXT}`,d:await (await packProject(state)).arrayBuffer(),t:'application/octet-stream'},
     {n:'request.json',d:JSON.stringify({type:'design_validation',requestId:meta.rid,createdAt:meta.at,to:MAIL(),subject:subj(),requester:{name:meta.name,email,company:meta.company},
       project:{name,region:state.project.region,taa:!!state.project.taa,redundantPower:state.project.psuRed?(state.project.psuScope==='mdf'?'mdf':'all'):'none',redundantCore:!!state.project.dualCore,family:state.project.family},
       totals:{devices:s.eps,switches:s.sw,poeW:Math.round(s.poe),estDrawW:Math.round(s.est),rackU:s.ru},bom:rollup().map(r=>({sku:r.sku,qty:r.qty,category:r.cat})),catalogVersion:CATMETA.version,notes:meta.notes,attachments:ATT.map(f=>f.name)},null,2),t:'application/json'}];
@@ -341,7 +341,7 @@ async function buildPackage(){
   for(const f of [...files,...att]){ const data=typeof f.d==='string'?b64(new TextEncoder().encode(f.d)):b64(f.d);
     eml+=`--${B}\r\nContent-Type: ${f.t}; name="${encHdr(f.n)}"\r\nContent-Disposition: attachment; filename="${encHdr(f.n)}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${wrap76(data)}`; }
   eml+=`--${B}--\r\n`;
-  const readme=`HOW TO SEND THIS DESIGN FOR VALIDATION\r\n\r\n1. Double-click "Send this email.eml". It opens a ready-made email with every file attached.\r\n2. Check it and press Send.\r\n\r\nOr send it yourself:\r\n  To:      ${MAIL()}\r\n  Subject: ${subj()}\r\n  Attach:  this ZIP file\r\n\r\nContents\r\n  Design summary.txt       Settings, rooms, switches, bandwidth per switch, BoM, checks\r\n  ${base}-bom.xlsx     Bill of materials, per room, power, checks\r\n  ${base}-network.svg  Network diagram\r\n${pdf?`  ${base}-report.pdf   Design report (cover, summary, diagram, BoM, power, checks)\r\n`:''}  ${base}-project.json Reopen in the BoM builder with "Open project"\r\n  request.json             Machine-readable request (for automated intake)\r\n  Attachments/             Files you added\r\n\r\nRequest ID: ${meta.rid}\r\nThis is an estimate and must be validated by the ProAV Design team before ordering.\r\n`;
+  const readme=`HOW TO SEND THIS DESIGN FOR VALIDATION\r\n\r\n1. Double-click "Send this email.eml". It opens a ready-made email with every file attached.\r\n2. Check it and press Send.\r\n\r\nOr send it yourself:\r\n  To:      ${MAIL()}\r\n  Subject: ${subj()}\r\n  Attach:  this ZIP file\r\n\r\nContents\r\n  Design summary.txt       Settings, rooms, switches, bandwidth per switch, BoM, checks\r\n  ${base}-bom.xlsx     Bill of materials, per room, power, checks\r\n  ${base}-network.svg  Network diagram\r\n${pdf?`  ${base}-report.pdf   Design report (cover, summary, diagram, BoM, power, checks)\r\n`:''}  ${base}${PJ_EXT} Reopen in the BoM builder with "Open saved project"\r\n  request.json             Machine-readable request (for automated intake)\r\n  Attachments/             Files you added\r\n\r\nRequest ID: ${meta.rid}\r\nThis is an estimate and must be validated by the ProAV Design team before ordering.\r\n`;
   const zip=new JSZip(), root=zip.folder(`Design validation - ${name.replace(/[\\/:*?"<>|]/g,'-')}`);
   root.file('README - how to send.txt',readme); root.file('Send this email.eml',eml);
   files.forEach(f=>root.file(f.n,f.d)); if(att.length){ const a=root.folder('Attachments'); att.forEach(f=>a.file(f.n,f.d)); }
@@ -470,6 +470,32 @@ const slug=()=>String(state.project.name||'netgear-av-project').toLowerCase().re
 // Standard browser download helper.
 function browserDownload(name,data){ const blob=data instanceof Blob?data:new Blob([data],{type:'text/plain'}); const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Saved '+name); }
+// ---------- project files (.ntgrbom) ----------
+// Saved projects are packed so they do not open as readable text: compressed, masked, plus a check value.
+// This is obfuscation, not encryption (the key ships with the page). The check rejects files edited outside the tool.
+const PJ_MAGIC='NTGRBOM', PJ_KEY='NETGEAR AV Network BoM builder', PJ_EXT='-project.ntgrbom';
+const pjEnc=t=>new TextEncoder().encode(t);
+const pjMask=u=>{ const k=pjEnc(PJ_KEY); for(let i=0;i<u.length;i++) u[i]^=k[i%k.length]^((i*31)&255); return u; };
+const pjHash=u=>{ let a=0x811c9dc5, b=0xcbf29ce4; const step=x=>{ a=Math.imul(a^x,0x01000193)>>>0; b=Math.imul(b^x,0x5bd1e995)>>>0; b=(b^(b>>>13))>>>0; };
+  for(const x of pjEnc(PJ_KEY)) step(x); for(let i=0;i<u.length;i++) step(u[i]); const o=new Uint8Array(8), d=new DataView(o.buffer); d.setUint32(0,a); d.setUint32(4,b); return o; };
+const pjZip=async(u,dir)=>new Uint8Array(await new Response(new Blob([u]).stream().pipeThrough(dir?new CompressionStream('gzip'):new DecompressionStream('gzip'))).arrayBuffer());
+async function packProject(st){
+  const json=pjEnc(JSON.stringify(st)), gz=!!window.CompressionStream, body=gz?await pjZip(json,true):json.slice(), head=pjEnc(PJ_MAGIC), H=head.length;
+  const out=new Uint8Array(H+10+body.length); out.set(head); out[H]=1; out[H+1]=gz?1:0; out.set(pjHash(json),H+2); out.set(pjMask(body),H+10);
+  return new Blob([out],{type:'application/octet-stream'});
+}
+async function unpackProject(buf){
+  const u=new Uint8Array(buf), head=pjEnc(PJ_MAGIC), H=head.length;
+  const first=u.findIndex(c=>c>32&&c!==0xEF&&c!==0xBB&&c!==0xBF);
+  if(u[first]===0x7B) return JSON.parse(new TextDecoder().decode(u)); // older .json project files still open
+  if(u.length<H+10||head.some((c,i)=>u[i]!==c)) throw new Error('this is not a BoM builder project file');
+  if(u[H]!==1) throw new Error('it was saved by a newer version of the BoM builder');
+  let body=pjMask(u.slice(H+10));
+  if(u[H+1]===1){ if(!window.DecompressionStream) throw new Error('this browser cannot read it; use a current Chrome, Edge, Safari or Firefox');
+    try{ body=await pjZip(body,false); }catch(e){ throw new Error('the file is damaged or was changed outside the BoM builder'); } }
+  const h=u.slice(H+2,H+10); if(!pjHash(body).every((x,i)=>x===h[i])) throw new Error('the file is damaged or was changed outside the BoM builder');
+  return JSON.parse(new TextDecoder().decode(body));
+}
 async function saveFile(name,data){
   try{ browserDownload(name,data); }
   catch(e){ console.error('Download failed',e); toast('Could not save the file.'); }
@@ -680,7 +706,7 @@ async function reqPdf(u,r){ const d=REQS.find(x=>x.uid===u), it=d&&d.items.find(
     await exportPdf({validated:it.status==='Validated',by:it.validatedBy,at:it.validatedAt,rid:it.rid}); }
   catch(e){ toast('That design could not be opened.'); } finally{ [state,result]=keep; } }
 $('#fjson').addEventListener('change',async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
-  try{ const s=JSON.parse(await f.text()); if(!s.project||!s.locations) throw new Error('not a project file'); state=s; state.project={...DEFAULT().project,...s.project}; run(); toast('Project opened.'); }catch(e){ toast('Could not open that file: '+e.message); } });
+  try{ const s=await unpackProject(await f.arrayBuffer()); if(!s||!s.project||!s.locations) throw new Error('this is not a BoM builder project file'); state=s; state.project={...DEFAULT().project,...s.project}; run(); toast('Project opened.'); }catch(e){ toast('Could not open that file: '+e.message); } });
 function catInfo(){ $('#catinfo').textContent=`Catalog ${CATMETA.version}`; }
 let tt; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),3500); }
 

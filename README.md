@@ -22,6 +22,7 @@ flowchart LR
 - **Devices per room:** for example 1G/10G AV-over-IP encoders and decoders, Dante audio, PTZ cameras, touch panels and NETGEAR WiFi 7 access points.
 - **Options:** region (SKUs), mains voltage, TAA, redundant power (all switches or main room only), redundant core, switch series (best fit, M4250 or M4350), gateway, support.
 - **Design options:** line-rate or stream bandwidth, oversubscription, spare ports (10%), PoE headroom (20%), core-to-core link sizing.
+- **Saving:** "Save project" writes a `.ntgrbom` file that only the BoM builder opens ("Open saved project"). It is compressed and masked, not encrypted, and the tool refuses a file that was edited outside it. Older `.json` project files still open.
 
 ## How switches are chosen
 
