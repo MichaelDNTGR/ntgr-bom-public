@@ -88,7 +88,8 @@ function renderInputs(){
       <div class="eps">${L.eps.map((e,ei)=>`<div class="ep" data-e="${ei}"><select data-ef="ep" aria-label="Device type">${epOpts(e.ep)}</select>
         <input type="number" min="0" data-ef="qty" value="${esc(e.qty)}" aria-label="Quantity"><button class="ghost x" data-act="dele" aria-label="Remove device">×</button></div>`).join('')}</div>
       <div class="lfoot"><button class="ghost add" data-act="adde">Add device</button><span class="mut">${fmt(total)} devices</span></div>
-      <label class="fld wide"><span>Connectors</span><select data-lf="conn"><option value=""${L.conn?'':' selected'}>Default (RJ45 and LC fiber)</option><option value="neutrik"${L.conn==='neutrik'?' selected':''}>Neutrik (etherCON and opticalCON)</option></select></label>
+      <label class="fld wide"><span>Connectors</span><select data-lf="conn"><option value=""${L.conn?'':' selected'}>Default (RJ45 and LC fiber)</option><option value="neutrik"${L.conn==='neutrik'?' selected':''}>Neutrik (etherCON)</option></select></label>
+      ${L.conn==='neutrik'?`<label class="fld wide"><span>Uplink card (M4350-16M4V)</span><select data-lf="card"><option value=""${L.card?'':' selected'}>APM414V: 4 × SFP28, LC fiber (included)</option><option value="quad"${L.card==='quad'?' selected':''}>opticalCON QUAD (APM414SD multimode / APM414LD single mode)</option></select></label>`:''}
       ${team()?`<label class="fld wide"><span>Access switch</span><select data-lf="override">${swOpts(L.override||'Auto')}</select></label>`:''}
       ${err?`<p class="err">${esc(err.msg)}</p>`:''}
       ${nodes.length?`<div class="pick">${nodes.map(n=>`<p><b>${n.n} × ${esc(n.model)}</b> <span>${n.up.u?(state.project.dualCore&&result.core?`${n.up.u/2} × ${n.up.speed}G to each core${n.n>1?', per switch':''}`:`${n.up.u} × ${n.up.speed}G uplinks ${n.n>1?'each':''}`):'standalone'}</span></p>

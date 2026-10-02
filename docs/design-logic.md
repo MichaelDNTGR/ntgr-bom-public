@@ -132,9 +132,11 @@ This favors the smallest switch that passes all checks, and M4250 over M4350 whe
 
 ### Neutrik etherCON rooms
 
-Each room has a **Connectors** setting: Default (RJ45 and LC fiber) or Neutrik (etherCON and opticalCON). Switches with Neutrik ports (today the M4350-16M4V: 8 etherCON front, 8 RJ45 rear, 16 × 2.5G PoE++, 1+1 internal PSUs) are only used in Neutrik rooms, and a Neutrik room only gets Neutrik switches. They are never used as a dedicated core. If a Neutrik room is too large for one model, the room shows an error suggesting a split or Standard RJ45.
+Each room has a **Connectors** setting: Default (RJ45 and LC fiber) or Neutrik (etherCON). Switches with Neutrik ports (today the M4350-16M4V: 8 etherCON front, 8 RJ45 rear, 16 × 2.5G PoE++, 1+1 internal PSUs) are only used in Neutrik rooms, and a Neutrik room only gets Neutrik switches. They are never used as a dedicated core. If a Neutrik room is too large for one model, the room shows an error suggesting a split or Default.
 
-In a Neutrik room, the 16M4V's fiber uplinks use an opticalCON QUAD interface card instead of the shipped APM414V: APM414SD for multimode, APM414LD for single mode. Standard SFP+/SFP28 optics go in the card's internal cages, so main-room links use optics rather than DAC. The opticalCON QUAD field cables and an opticalCON-to-LC fan-out at the core end are flagged in Checks but not in the BoM (no part numbers yet). In a Default room the 16M4V is not used, and the APM414V card is never swapped. The APM414C (4 × 10GBASE-T) card is in the catalog but not chosen by the tool.
+A Neutrik room also shows **Uplink card (M4350-16M4V)**. The default is the APM414V it ships with: 4 × SFP28, standard LC fiber. The opticalCON QUAD card is used only when the user selects it, never automatically. It is APM414SD for multimode or APM414LD for single mode, following the room's fiber type, and replaces the APM414V in the BoM.
+
+How the QUAD card works: 4 internal SFP28 cages take normal 10G SFP+ or 25G SFP28 optics, and 4 included patch cords run from them to two Neutrik opticalCON QUAD connectors on the faceplate. Each QUAD connector carries 4 fibers (2 duplex links). The field cable is a locking opticalCON QUAD cable, and the far end (core) needs an opticalCON-to-LC fan-out or panel. Because the optics sit inside the card, main-room links use optics instead of DAC. The field cables and fan-out are flagged in Checks, not in the BoM (no part numbers yet). The APM414C copper card (4 × 10GBASE-T) is in the catalog but not offered: it would need copper uplinks to the core.
 
 ### Mixed rooms
 

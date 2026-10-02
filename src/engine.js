@@ -112,7 +112,7 @@ function evalN(cat,PT,p,D,n,S,ctx){
       let u; if(noLag) u=need===1?(S.dualCore?2:1):0;
       else if(S.dualCore){ const per=S.lagSizes.filter(x=>x<=S.maxLag).sort((a,b)=>a-b).find(x=>x>=need); u=per?per*2:0; }
       else u=lagSizes(S).find(x=>x>=need);
-      if(u && u<=av) fits.push({speed:s,u,tbd:!hasOptic(cat,s,ctx.media,ctx.dist,ctx.inRack&&!(ctx.neutrik&&isNeutrik(p)),[p])});
+      if(u && u<=av) fits.push({speed:s,u,tbd:!hasOptic(cat,s,ctx.media,ctx.dist,ctx.inRack&&!(ctx.quad&&isNeutrik(p)),[p])});
     }
     // strategy: slowest speed that fits (low), fewest links (fewest) or fastest speed (fast); speeds with a catalog optic first
     const order={low:(a,b)=>a.speed-b.speed, fast:(a,b)=>b.speed-a.speed, fewest:(a,b)=>a.u-b.u||a.speed-b.speed}[S.upPref]||((a,b)=>a.speed-b.speed);
@@ -314,7 +314,7 @@ function designOnce(cat,state,upPref){
   const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||''}; bom.push(l);} l.qty+=qty; };
   const locs=state.locations.map(L=>({...L,items:L.eps.map(x=>({ep:epById[x.ep],qty:x.qty})).filter(x=>x.ep)}));
   const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,true]));
-  const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik'}; };
+  const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik',quad:L.card==='quad'}; };
   const ovr=L=>L.override&&L.override!=='Auto'?L.override:null;
   let standalone=false;
   // redundant power can apply everywhere or only in the main equipment room (MDF + core)
@@ -398,13 +398,14 @@ function designOnce(cat,state,upPref){
   }
   // uplink optics/cables: must suit the room switch and the core it lands on
   const coreLoc=mdfName+' (core)', corePorts=[];
-  // Neutrik rooms: a switch with an interface card slot (M4350-16M4V) takes an opticalCON QUAD card for its fiber uplinks:
-  // APM414SD (multimode) or APM414LD (single mode) replaces the shipped APM414V. Optics sit in the card's internal cages,
+  // Uplink card "opticalCON QUAD" (chosen by the user, never automatic): a switch with an interface card slot (M4350-16M4V)
+  // swaps its shipped APM414V for APM414SD (multimode) or APM414LD (single mode). Optics sit in the card's internal cages,
   // so in-rack links use optics too (no DAC through opticalCON).
   const ocCard=(p,media)=>{ const want=media==='SMF'?'APM414LD':'APM414SD';
     return (cat.Compatibility||[]).some(r=>r.Scope_Type==='Product'&&r.Scope_Value===p.Product_ID&&r.Accessory_Base===want)?cat.Accessories.find(a=>a.Base_Model===want):null; };
+  for(const r of res) if(r.L.card==='quad'&&!r.groups.some(g=>ocCard(g.best.p,'MMF'))) notes.push({lvl:'warn',msg:`${r.L.name}: opticalCON QUAD was selected, but this room's switch has no interface card slot (only the M4350-16M4V has one, in Neutrik rooms), so standard fiber is used.`});
   for(const {L,p,b,ctx} of uplinks){
-    const card=ctx.neutrik?ocCard(p,ctx.inRack?'MMF':ctx.media):null, inRack=ctx.inRack&&!card;
+    const card=ctx.quad?ocCard(p,ctx.inRack?'MMF':ctx.media):null, inRack=ctx.inRack&&!card;
     const lk=pickLink(cat,b.up.speed,inRack?'DAC':ctx.media,ctx.dist,inRack,core&&core.p?[p,core.p]:[p]), q=b.up.u*b.n;
     if(card){ add(card.Orderable_SKU,card.Description,b.n,'Optics',L.name,'opticalCON uplink card, replaces the shipped APM414V');
       notes.push({lvl:'info',msg:`${L.name}: the ${p.Model_Name} uplinks use the ${card.Base_Model} opticalCON QUAD card (${card.Media==='SMF'?'single mode':'multimode'}) with ${lk.sku} optics in its internal cages. Order Neutrik opticalCON QUAD field cables, and an opticalCON-to-LC fan-out at the ${core&&core.p?core.p.Model_Name:'other'} end (not in this BoM).`}); }
