@@ -199,7 +199,7 @@ Room switches and the core are scored together, because a room's cheapest switch
 | Core | Core switches, PSU modules, core-to-core DAC cables. |
 | Gateway | PR460X router, on a free 10G port of the core. The PR460X does not take DAC/AOC cables, so that link is a 10G SR optic (AXM761) on both ends, plus a multimode LC patch cord (not in the BoM). If the core has no free 10G port (for example an M4500-32C, 100G only), the router goes on a room switch, main room first, then the nearest closet: a free 10G copper port over Cat6a when the run is within `Copper_10G_Max_m` (100 m), otherwise a free 10G fiber port with optics both ends fit. SFP28 ports next to 25G uplinks are skipped (one speed per 4-port block). If no 10G port is free anywhere, the router link drops to 1G with a warning in Checks: a free 1G/2.5G copper port first (no parts), otherwise a 1G SX module (AGM731F) on both ends in a free SFP port, with a note to confirm the PR460X SFP+ port accepts 1G modules. If no switch has a free port, the design shows a gateway error. |
 | WiFi access points | NETGEAR APs in the device list are added as products. |
-| Support | OnCall support SKU per switch, by support category and years. |
+| Support | Sprint, Overdrive or Fastlane for 1, 3 or 5 years, one SKU per switch, access point and router: `{tier}-{Product_ID}-{months}` (SPR / DRV / FLS, 12 / 36 / 60), for example `DRV-XSM4328FV-36`. Only tiers in the product's `Support_Tiers` are added; others get a warning. Managed switches include 3 years of Sprint (`Included_Support`), so Sprint 1 or 3 years adds no SKU for them. OnCall (PMB03) is no longer sold; older projects with OnCall convert to Overdrive (both 24x7). |
 
 ### Router placement
 
@@ -273,6 +273,6 @@ node tools/validation/run.js              # check the validation scenarios
 
 - No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest. The scores for switches, cores and links are estimates; adding `List_Price_USD` to Products (and prices for optics) makes every comparison above a real cost comparison.
 - QSFP28 breakout (4 × 25G / 4 × 10G) is not used yet. A core that must take many 100G links plus some 10G/25G links (for example 12 × 100G and one 10G closet) has no fit today; the engine shows an error.
-- M4500 is not used for devices that need AVB or a PTP boundary clock (its datasheet lists neither), and its Sprint/Overdrive support SKUs are not added to the BoM yet.
+- M4500 is not used for devices that need AVB or a PTP boundary clock (its datasheet lists neither), and Fastlane is not listed for it (Sprint and Overdrive are).
 - With a redundant core, one 10G port for the gateway is reserved on each core, but the BoM includes one gateway cable.
 - No aggregation (spine/leaf) layer: very large networks must be designed by the ProAV Design team.

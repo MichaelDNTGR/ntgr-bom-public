@@ -1,6 +1,6 @@
 // Validation scenarios for uplink / optic selection. `expect` is what a ProAV designer would want to see.
 const base = {region:'Americas',taa:false,psuRed:false,dualUplink:false,dualCore:false,basis:'line',oversub:1,spare:10,poeHead:20,
-  voltage:110,gateway:false,support:0,family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'};
+  voltage:110,gateway:false,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'};
 const L = (name, type, distance, media, eps) => ({id:name, name, type, distance, media, override:'Auto', eps:eps.map(([ep,qty])=>({ep,qty}))});
 const MDF = (eps=[]) => L('Main equipment room','MDF',3,'MMF',eps);
 const S = (id, title, expect, project, locations, extraEndpoints=[]) => ({id, title, expect, project:{...base, name:`${id} ${title}`, ...project}, locations, extraEndpoints});
@@ -104,4 +104,10 @@ module.exports = [
   S('V32','Router link: 10G required',
     'Same rooms with "10G required": the main-room switch must keep a 10G port for the router, so a larger switch (M4350-24G4XF) becomes the core and the router gets 10G SFP+.',
     {gateway:true, psuRed:true, gwLink:'10g'}, [MDF([['EP-DANTE',1]]), L('Closet 1','IDF',100,'MMF',[['EP-1G-RX',8]]), L('Closet 2','IDF',100,'MMF',[['EP-1G-RX',8]])]),
+  S('V33','Overdrive 3 years on the demo design',
+    'Support contract Overdrive 3 years: one DRV-<model>-36 SKU per switch, access point and router; core-end and room switches each get their own.',
+    {gateway:true, psuRed:true, dualUplink:true, spare:10, support:'DRV:3'}, [L('Main equipment room','MDF',3,'MMF',[['EP-1G-TX',16],['EP-10G-TX',4],['EP-DANTE',8]]), L('Closet 1','IDF',150,'MMF',[['EP-1G-RX',24],['EP-PTZ',4],['EP-WBE758',4]]), L('Closet 2','IDF',600,'SMF',[['EP-1G-RX',12],['EP-10G-FX',4],['EP-PANEL',6]])]),
+  S('V34','Fastlane on an M4500 design',
+    'Fastlane is not listed for M4500: a warning and no support SKU for those switches (M4350 closets still get FLS SKUs).',
+    {spare:0, dualCore:true, support:'FLS:1'}, [MDF(), ...[1,2,3,4,5,6].map(i=>L(`Closet ${i}`,'IDF',100,'MMF',[['EP-10G-TX',6]]))]),
 ];

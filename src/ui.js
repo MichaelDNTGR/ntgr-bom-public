@@ -6,14 +6,14 @@ const BUILTIN=JSON.parse(document.getElementById('catalog').textContent);
 let CAT=BUILTIN, CATMETA={version:ENG.settings(BUILTIN).Catalog_Version,source:'Built-in catalog',publishedAt:null};
 const SET=()=>ENG.settings(CAT);
 const nid=()=>'L'+Math.random().toString(36).slice(2,8);
-const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:0,family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all',gwLink:'best'},
+const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all',gwLink:'best'},
   endpoints:CAT.Endpoints.map(e=>({...e})),
   locations:[{id:nid(),name:'Main equipment room',type:'MDF',distance:3,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-TX',qty:16},{ep:'EP-10G-TX',qty:4},{ep:'EP-DANTE',qty:8}]},
     {id:nid(),name:'Closet 1',type:'IDF',distance:150,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:24},{ep:'EP-PTZ',qty:4},{ep:'EP-WBE758',qty:4}]},
     {id:nid(),name:'Closet 2',type:'IDF',distance:600,media:'SMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:12},{ep:'EP-10G-FX',qty:4},{ep:'EP-PANEL',qty:6}]}]}; };
 let state; try{ state=JSON.parse(localStorage.getItem('ntgr-bom-v2')||'null'); }catch(e){ state=null; }
 if(!state||!state.project||!state.locations) state=DEFAULT();
-state.project={...DEFAULT().project,...state.project};
+state.project={...DEFAULT().project,...state.project}; fixSupport(state.project);
 // a saved session keeps its own device library; pick up devices and fields added to the catalog since, without overwriting edits
 CAT.Endpoints.forEach(e=>{ const i=state.endpoints.findIndex(x=>x.Endpoint_ID===e.Endpoint_ID); if(i>=0) state.endpoints[i]={...e,...state.endpoints[i]}; else state.endpoints.push({...e}); });
 let result=null, tab='diagram', view='customer', canTeam=false, advOpen=false, libOpen=false;
@@ -26,6 +26,19 @@ function swOpts(sel){ return `<option value="Auto"${sel==='Auto'?' selected':''}
 function epOpts(sel){ const groups={}; state.endpoints.forEach(e=>(groups[e.Category||'Other']=groups[e.Category||'Other']||[]).push(e));
   return Object.entries(groups).map(([g,es])=>`<optgroup label="${esc(g)}">${es.map(e=>`<option value="${esc(e.Endpoint_ID)}"${e.Endpoint_ID===sel?' selected':''}>${esc(e.Name)}</option>`).join('')}</optgroup>`).join(''); }
 
+// Support contracts: Sprint (24x5), Overdrive (24x7, 2h P1), Fastlane (24x7, L3). Only tiers offered for a product in the design are listed.
+const SUP_TIERS=[['SPR','Sprint','24x5, advance RMA'],['DRV','Overdrive','24x7, 2h SLA, NBD RMA'],['FLS','Fastlane','24x7, L3, NBD RMA']];
+// older projects stored OnCall years as a number; OnCall was 24x7, so it maps to Overdrive
+function fixSupport(p){ if(typeof p.support==='number'||/^\d+$/.test(String(p.support))) p.support=+p.support?'DRV:'+(+p.support):''; }
+function supportSel(){
+  const P=state.project, pids=new Set();
+  if(result){ result.accessNodes.forEach(n=>pids.add(n.pid)); if(result.core&&result.core.p) pids.add(result.core.p.Product_ID);
+    if(P.gateway) pids.add(SET().Gateway_Product_ID||'PR460X'); state.locations.forEach(L=>L.eps.forEach(e=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep); if(ep&&ep.NETGEAR_Product_ID) pids.add(ep.NETGEAR_Product_ID); })); }
+  const prods=CAT.Products.filter(p=>pids.has(p.Product_ID));
+  const avail=t=>!prods.length||prods.some(p=>new RegExp('\\b'+t+'\\b','i').test(p.Support_Tiers||''));
+  const cur=String(P.support||'');
+  return `<select data-p="support"><option value=""${cur?'':' selected'}>Not included</option>${SUP_TIERS.filter(([,n])=>avail(n)||cur.startsWith(n)).map(([c,n,d])=>`<optgroup label="${n} (${d})">${[1,3,5].map(y=>`<option value="${c}:${y}"${cur===c+':'+y?' selected':''}>${n}, ${y} year${y>1?'s':''}</option>`).join('')}</optgroup>`).join('')}</select>`;
+}
 function renderInputs(){
   const P=state.project;
   const sel=(k,opts)=>`<select data-p="${k}">${opts.map(([v,l])=>`<option value="${v}"${String(P[k])===String(v)?' selected':''}>${l}</option>`).join('')}</select>`;
@@ -57,7 +70,7 @@ function renderInputs(){
       ${num('mdfPatch','Patch length in main room','m',1,20)}
       <label class="fld"><span>Core-to-core link sizing</span>${sel('islRule',[['failover','Busiest switch (failover)'],['half','Half of all traffic'],['full','All traffic (non-blocking)']])}</label>
       ${P.gateway?`<label class="fld"><span>Router link</span>${sel('gwLink',[['best','Best available in main room'],['10g','10G required']])}</label>`:''}
-      <label class="fld"><span>OnCall 24x7 support</span>${sel('support',[[0,'Not included'],[1,'1 year'],[3,'3 years'],[5,'5 years']])}</label>
+      <label class="fld"><span>Support contract</span>${supportSel()}</label>
       ${team()?`<label class="fld"><span>Core model</span><select data-p="coreOverride">${swOpts(P.coreOverride||'Auto')}</select></label>
       <label class="fld"><span>Separate dual uplinks</span>${sel('dualUplink',[['true','Always 2+ uplinks'],['false','Single uplink allowed']])}</label>`:''}
     </div>`:'';
@@ -97,7 +110,7 @@ let tmr; const later=()=>{ clearTimeout(tmr); tmr=setTimeout(run,300); };
 document.addEventListener('input',ev=>{
   const t=ev.target; if(!t.dataset||t.closest('#modal')||t.closest('#adminpage')) return;
   const val=t.type==='checkbox'?t.checked:(t.type==='number'?(t.value===''?'':+t.value):t.value);
-  if(t.dataset.p){ let v=val; if(['dualUplink'].includes(t.dataset.p)&&t.tagName==='SELECT') v=(val==='true'); if(['voltage','oversub','support'].includes(t.dataset.p)) v=+val;
+  if(t.dataset.p){ let v=val; if(['dualUplink'].includes(t.dataset.p)&&t.tagName==='SELECT') v=(val==='true'); if(['voltage','oversub'].includes(t.dataset.p)) v=+val;
     state.project[t.dataset.p]=v; if(t.dataset.p==='dualCore'){ state.project.dualUplink=v; } }
   else if(t.dataset.lf){ state.locations[+t.closest('.loc').dataset.l][t.dataset.lf]=val; }
   else if(t.dataset.ef){ state.locations[+t.closest('.loc').dataset.l].eps[+t.closest('.ep').dataset.e][t.dataset.ef]=val; }
@@ -707,7 +720,7 @@ async function reqPdf(u,r){ const d=REQS.find(x=>x.uid===u), it=d&&d.items.find(
     await exportPdf({validated:it.status==='Validated',by:it.validatedBy,at:it.validatedAt,rid:it.rid}); }
   catch(e){ toast('That design could not be opened.'); } finally{ [state,result]=keep; } }
 $('#fjson').addEventListener('change',async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
-  try{ const s=await unpackProject(await f.arrayBuffer()); if(!s||!s.project||!s.locations) throw new Error('this is not a BoM builder project file'); state=s; state.project={...DEFAULT().project,...s.project}; run(); toast('Project opened.'); }catch(e){ toast('Could not open that file: '+e.message); } });
+  try{ const s=await unpackProject(await f.arrayBuffer()); if(!s||!s.project||!s.locations) throw new Error('this is not a BoM builder project file'); state=s; state.project={...DEFAULT().project,...s.project}; fixSupport(state.project); run(); toast('Project opened.'); }catch(e){ toast('Could not open that file: '+e.message); } });
 function catInfo(){ $('#catinfo').textContent=`Catalog ${CATMETA.version}`; }
 let tt; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),3500); }
 

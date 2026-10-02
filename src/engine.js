@@ -304,7 +304,9 @@ function design(cat,state){
 function designOnce(cat,state,upPref){
   const S={...state.project,upPref}, T=settings(cat), PT=portTypes(cat);
   S.maxLag=N(T.Max_LAG_Members)||8; S.minUp=N(T.Min_Uplink_Gbps)||1; S.streamHead=T.Stream_Uplink_Headroom_Pct===undefined?50:N(T.Stream_Uplink_Headroom_Pct); S.lagSizes=String(T.Uplink_LAG_Sizes||'1,2,4,8').split(/[,; ]+/).map(Number).filter(x=>x>0); const inRackMax=N(T.In_Rack_Max_m)||20, eff=N(T.PSU_Efficiency)||0.9;
-  const supPat=T.Support_SKU_Pattern||'PMB03{years}{cat}-10000S', gwId=T.Gateway_Product_ID||'PR460X';
+  // support contract: "SPR:3" = Sprint 3 years (DRV = Overdrive, FLS = Fastlane); older projects stored OnCall years as a number (24x7, so Overdrive)
+  const supPat=/\{tier\}/.test(T.Support_SKU_Pattern||'')?T.Support_SKU_Pattern:'{tier}-{pid}-{months}',
+    [supTier,supYrs]=typeof S.support==='number'?(S.support?['DRV',S.support]:['',0]):String(S.support||'').split(':').map((x,i)=>i?+x:x), gwId=T.Gateway_Product_ID||'PR460X';
   const notes=[], bom=[], links=[], power=[];
   const epById=Object.fromEntries(state.endpoints.map(e=>[e.Endpoint_ID,e]));
   const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||''}; bom.push(l);} l.qty+=qty; };
@@ -326,7 +328,13 @@ function designOnce(cat,state,upPref){
   const errors=res.filter(r=>r.err).map(r=>({loc:r.L.name,msg:r.err}));
   const coreDem={links:{},gw:S.gateway,total:0,maxSw:0,needBC:false,needAVB:false,lagged:false}; const accessNodes=[];
   let score=0; const uplinks=[];
-  const support=(p,qty,loc)=>{ if(!S.support) return; const c=String(p.Support_Category||'').match(/(\d)/); if(!c) return; const sku=supPat.replace('{years}',S.support).replace('{cat}',c[1]); const a=cat.Accessories.find(x=>x.Orderable_SKU===sku); add(sku,a?a.Description:`Support ${S.support}-year`,qty,'Support',loc); };
+  const TIERS={SPR:'Sprint',DRV:'Overdrive',FLS:'Fastlane'}, supIncl=new Set(), supMiss=new Set();
+  const support=(p,qty,loc)=>{ if(!supTier||!p||!qty) return; const name=TIERS[supTier]; if(!name) return;
+    // only tiers listed for the product; Sprint up to the included term needs no SKU
+    if(!new RegExp('\\b'+name+'\\b','i').test(p.Support_Tiers||'')){ supMiss.add(p.Model_Name); return; }
+    const inc=String(p.Included_Support||'').match(/Sprint\s*(\d+)/i); if(supTier==='SPR'&&inc&&supYrs<=+inc[1]){ supIncl.add(p.Model_Name); return; }
+    const sku=supPat.replace('{tier}',supTier).replace('{pid}',p.Product_ID).replace('{months}',supYrs*12), a=cat.Accessories.find(x=>x.Orderable_SKU===sku);
+    add(sku,a?a.Description:`${name} support, ${supYrs} year${supYrs>1?'s':''}`,qty,'Support',loc,`${name} ${supYrs} yr for ${p.Model_Name}`); };
   for(const r of res){
     const L=r.L, ctx=ctxFor(L,standalone);
     for(const g of r.groups){
@@ -350,7 +358,7 @@ function designOnce(cat,state,upPref){
         head:b.psu.budget?((b.psu.budget-b.poeLoadUnit)/b.psu.budget):null,est:N(p.Power_Max_NoPoE_W)+b.poeLoadUnit/eff,max:N(p.Power_Max_FullPoE_W)||N(p.Power_Max_NoPoE_W),ru:N(p.Rack_Units),half:/Half/.test(p.Width_Class||'')});
       const units=splitUnits(g.items,b.n,S); if(b.up.u>0&&!standalone){ units.forEach(un=>{ coreDem.total+=un.bw; coreDem.maxSw=Math.max(coreDem.maxSw,un.bw); }); }
       accessNodes.push({loc:L.name,type:L.type,model:p.Model_Name,pid:p.Product_ID,n:b.n,ports:N(p.Total_Ports),units,group:g.label,up:b.up,alts:g.alts.map(a=>({pid:a.p.Product_ID,name:a.p.Model_Name,n:a.n}))});
-      for(const it of g.items){ const pid=it.ep.NETGEAR_Product_ID; if(pid&&N(it.qty)) add(regionSku(cat,pid,S),it.ep.Name,N(it.qty),'Wireless',L.name); }
+      for(const it of g.items){ const pid=it.ep.NETGEAR_Product_ID; if(pid&&N(it.qty)){ add(regionSku(cat,pid,S),it.ep.Name,N(it.qty),'Wireless',L.name); support(cat.Products.find(x=>x.Product_ID===pid),N(it.qty),L.name); } }
     }
   }
   let core=null, gwOnCore=false, gateway=null; const mdfName=(locs.find(L=>L.type==='MDF')||{name:'MDF'}).name;
@@ -399,7 +407,7 @@ function designOnce(cat,state,upPref){
     links.push({loc:L.name,model:p.Model_Name,n:b.n,speed:b.up.speed,u:b.up.u,optic:lk.sku,dist:ctx.dist,media:ctx.inRack?'in-rack':ctx.media});
   }
   if(S.gateway && units>0){ const gw=cat.Products.find(p=>p.Product_ID===gwId);
-    if(gw){ add(regionSku(cat,gwId,S),`${gw.Model_Name}`,1,'Gateway',mdfName);
+    if(gw){ add(regionSku(cat,gwId,S),`${gw.Model_Name}`,1,'Gateway',mdfName); support(gw,1,mdfName);
       if(gwOnCore){ const lk=pickLink(cat,10,'MMF',N(S.mdfPatch)||3,true,[core.p,gw]);
         add(lk.sku,lk.desc,lk.perLink,lk.cat,mdfName,lk.perLink===2?'Gateway to core: optic at both ends, plus an LC patch cord':'Gateway to core');
         gateway={loc:'core',model:core.p.Model_Name,via:lk.perLink===2?'fiber':'cable',sku:lk.sku,speed:10};
@@ -440,6 +448,9 @@ function designOnce(cat,state,upPref){
       power.push({loc:mdfName,model:gw.Model_Name,n:1,poe:0,cfg:'Internal PSU',eps:null,prot:null,budget:null,head:null,est:156,max:156,ru:N(gw.Rack_Units)||1,half:false}); } }
   if(coreDem.needBC||locs.some(L=>L.items.some(i=>i.ep.Timing==='PTP-BC'&&N(i.qty)))) notes.push({lvl:'info',msg:'Some devices need a PTP boundary clock (e.g. SMPTE 2059-2 / AES67), so only switches with PTP boundary clock were used for them and for the core.'});
   if(locs.some(L=>L.items.some(i=>i.ep.Timing==='AVB'&&N(i.qty)))) notes.push({lvl:'info',msg:'AVB / Milan devices: only AVB-capable switches were used. M4250 does not run AVB over a LAG, so M4250 switches with AVB devices get one uplink per core.'});
+  if(supIncl.size) notes.push({lvl:'info',msg:`Sprint ${supYrs} yr: ${[...supIncl].join(', ')} already include${supIncl.size>1?'':'s'} 3 years of Sprint, so no support SKU is added for ${supIncl.size>1?'them':'it'}.`});
+  if(supMiss.size) notes.push({lvl:'warn',msg:`${TIERS[supTier]} is not listed for ${[...supMiss].join(', ')}, so no support SKU was added for ${supMiss.size>1?'them':'it'}. Choose another tier or check availability with NETGEAR.`});
+  if(supTier) notes.push({lvl:'info',msg:'Support SKUs follow the NETGEAR pattern (SPR / DRV / FLS - model - months). Confirm each SKU and its price with NETGEAR or your distributor.'});
   if(S.taa) notes.push({lvl:'info',msg:'TAA: only switches with TAA-compliant SKUs were considered. TAA status of PSUs, optics and cables must be confirmed.'});
   if(locs.some(L=>L.items.some(i=>N(i.ep.PoE_W)>30&&N(i.qty)))) notes.push({lvl:'info',msg:'Devices above 30W need Ultra90 PoE++ (802.3bt) ports; only those switches were considered for them.'});
   notes.push({lvl:'info',msg:'Switches interconnect with LAG uplinks and IGMP Plus (no stacking), which keeps AVB and PTP available.'});
