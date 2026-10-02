@@ -19,7 +19,7 @@ flowchart TD
     CC --> I
     G2 --> I["Repeat 2-3 with slowest, fewest and fastest uplinks<br/>then each room's close alternatives"]
     I --> H{"Any complete design?"}
-    H -- Yes --> J["4. Keep the lowest total score"]
+    H -- Yes --> J["4. Keep the best design: fewest switches and uplinks<br/>unless it costs over 30% more than the cheapest"]
     H -- No --> X["Error: no core fits<br/>contact ProAV Design"]
     S --> R
     J --> R["5. Place the router<br/>core, else a room switch"]
@@ -58,7 +58,9 @@ flowchart TD
     N --> C
     P5 -- Yes --> P6{"Uplink optic in the catalog?"}
     P6 -- Yes --> SC["Passes: give it a score"]
-    P6 -- No --> M["Keep as fallback with placeholder<br/>and try up to 3 more units"]
+    P6 -- No --> TP{"Third-party module type<br/>reaches the distance?"}
+    TP -- Yes --> SC
+    TP -- No --> M["Keep as fallback with placeholder<br/>and try up to 3 more units"]
     M --> SC
     SC --> R["Lowest score wins<br/>next best shown as Also fits"]
 ```
@@ -83,8 +85,11 @@ flowchart TD
     G -- No --> Z["Drop this speed"]
     G -- Yes --> H{"Optic or cable that fits this switch<br/>for the speed, fiber type and distance?"}
     H -- Yes --> OK["Candidate"]
-    H -- No --> T["Candidate with placeholder<br/>used only if nothing else fits"]
-    OK --> S["Pick by strategy:<br/>slowest speed, fewest links or fastest speed"]
+    H -- No --> TQ{"Third-party module type<br/>for the distance? (eSR, ER)"}
+    TQ -- Yes --> T2["Candidate with 3P module<br/>after catalog speeds"]
+    TQ -- No --> T["Candidate with placeholder<br/>used only if nothing else fits"]
+    OK --> S["Pick by strategy:<br/>slowest, fewest links, fastest or cheapest links"]
+    T2 --> S
     T --> S
 ```
 
@@ -92,7 +97,7 @@ flowchart TD
 - Uplinks are never slower than `Min_Uplink_Gbps` (default 1). Raise it to 10 to force 10G uplinks everywhere.
 - **Uplink speed** (Design options): Automatic (lowest cost) or Prefer 10G / 25G / 100G. A preferred speed is used whenever the switch has ports for it and it carries the load within `Max_LAG_Members` links; switches that can run it are favored over cheaper ones that cannot. If no NETGEAR or validated optic.ca module reaches the distance at that speed, the design keeps the speed and the BoM shows a placeholder naming the third-party module type needed (for example 25GBASE-eSR, up to 300 m on OM4), with a warning to confirm compatibility. Rooms where the preference cannot be used fall back to the automatic choice, with a note.
 - On **stream bandwidth**, uplinks must carry the room's stream total plus `Stream_Uplink_Headroom_Pct` (default 50%), because stream rates are typical, not peak. Line-rate is already worst case and gets no margin. Example: 7 Dante devices stream about 0.14 Gbps, plus 50% is 0.21 Gbps, so a 1G uplink fits and a 1G switch (M4250-9G1F) is chosen.
-- Speeds with a catalog optic always come before speeds that would need a placeholder. If every speed needs a placeholder (for example 25G at 150 m multimode, where 25G SR reaches 100 m), the engine also tries one to three more switches at a lower speed. A placeholder costs more than an extra switch, so an orderable design wins.
+- Speeds with a catalog optic come first, then speeds that need a third-party module (`3P-`, bought separately), then speeds that would need a placeholder. If every speed needs a placeholder (for example 25G at 150 m multimode, where 25G SR reaches 100 m), the engine also tries one to three more switches at a lower speed. A placeholder costs more than an extra switch, so an orderable design wins.
 - With a redundant core, each link group must carry the switch's full load on its own, so either core can fail.
 
 ### Power supply check
@@ -119,6 +124,18 @@ Each device type can carry a `Timing` value in the Endpoints sheet:
 | `AVB` | The switch must support AVB. M4250 does not run AVB over a LAG, so an M4250 with AVB devices gets one uplink per core. A room that needs more than one link moves to M4350 or more M4250 units. |
 
 Devices without a timing need still go to the cheapest switch: in a mixed room, a split puts them on M4250 while the timing devices get an M4350.
+
+### Design priority: best design first
+
+Customers always get the **best design**: among all designs that meet the hard rules (ports, PoE, power, timing, distances, compatibility, redundancy), the one with the fewest switches and uplinks wins. Each extra switch and uplink weighs heavily, so one larger switch beats several small ones, and fewer, faster links beat many slow ones. Cost is only a safety net: if the best design costs more than `Best_Design_Cost_Margin_Pct` (30%) above the lowest-cost valid design, the lower-cost design is shown, with a note. When the best design costs more, Checks says so, for example "9 switches instead of 12, for about 5% more hardware cost". NETGEAR staff can switch to **Lowest cost** in team mode; customers cannot.
+
+### Third-party modules for long runs
+
+When no NETGEAR or validated optic.ca module reaches the distance at a speed, but a third-party module type does (25G and 100G extended-reach eSR/eSR4 on multimode up to 300 m, 40G eSR4 up to 400 m, ER/ZR on single mode), the engine keeps the best design and adds the module as a part to buy separately: `3P-25G-eSR-MMF`, brand "Third party", with a warning to confirm compatibility with the ProAV Design team. A catalog optic at another speed is still preferred when it does the same job. Beyond any module's reach, the design avoids that speed and recommends single-mode fiber. `Allow_Third_Party_Optics` (Tool_Settings) turns this off.
+
+### Brand
+
+Every BoM line shows its brand: NETGEAR for products, the `Brand` column for accessories (NETGEAR, optic.ca, or a future supplier), and "Third party" for `3P-` modules.
 
 ### Scoring: "best fit"
 
@@ -193,7 +210,7 @@ Example: 7 Dante devices in the main room and 7 in a closet, stream bandwidth: t
 
 Room switches and the core are scored together, because a room's cheapest switch can force a bigger core.
 
-1. The whole design is built four times, with room uplinks on the **slowest** speed that fits, the **fewest** links, the **fastest** speed (each uplink also counts the core port it uses, so this one wins when core ports run out), and the **cheapest** links. The design with the lowest total cost (rooms + core + uplinks) wins. Near-ties keep the slower uplinks.
+1. The whole design is built four times, with room uplinks on the **slowest** speed that fits, the **fewest** links, the **fastest** speed (each uplink also counts the core port it uses, so this one wins when core ports run out), and the **cheapest** links. With Design priority **Best design** (default), extra switches and uplinks weigh heavily, so the simplest design wins; with **Lowest cost** (internal), the lowest total cost wins. Near-ties keep the slower uplinks.
 2. For each room with one switch group, the engine then tries the room's next three "Also fits" switches on the whole design, and keeps any that lowers the total, so a room's cheapest switch cannot force an expensive core.
 3. If no strategy finds a core, the engine shows an error suggesting 2:1 oversubscription, Best fit, or an aggregation layer.
 
@@ -262,7 +279,7 @@ Example: NETGEAR ACM761 (100G SR4) is listed for M4500 only, and the optic.ca NG
 | Audio-only closets, stream bandwidth, `Min_Uplink_Gbps` = 1 | M4350-24F4X core | Its 1/2.5G SFP ports carry the 1G uplinks, so none are wasted. With the default of 10, uplinks are 10G and the core is a 10G model. |
 | Closets of 90G, 80G and 8G, single core | 4 × 25G, 4 × 25G, 1 × 10G; M4350-32F8V core | With prices, 4 × 25G optics plus a core with 8 × SFP28 cost less than 8 × 10G. |
 | 16 × 10G copper encoders in one closet | 1 × M4350-24X8F8V on 8 × 25G | Cheaper than 2 × M4350-8X8F with 16 × 10G uplinks (32 optics). |
-| 90G closet at 150 m multimode | 2 switches, 8 × 10G each | 25G SR reaches 100 m, so splitting at 10G avoids a placeholder optic. |
+| 90G closet at 150 m multimode | 1 switch, 4 × 25G with third-party 25GBASE-eSR | 25G SR reaches 100 m; a third-party eSR module (300 m) keeps one switch instead of splitting at 10G. Lowest cost: 2 switches at 10G, avoiding a placeholder optic. |
 | Six 60G closets, redundant core | 8 × 25G each; 2 × M4500-48XF8C core | 48 × 25G ports per core; no M4350 has that many. |
 | Six rooms of 40 × 10G fiber, redundant core | M4500-48XF8C leaves, 8 × 100G (ACM761); 2 × M4500-32C | Spine and leaf as in the M4500 datasheet. |
 | ST 2110 devices (`PTP-BC`) + 1G encoders | M4350-16V4C for the 2110 devices, M4250 for the encoders, BC-capable core | Only the timing devices need a boundary clock. |

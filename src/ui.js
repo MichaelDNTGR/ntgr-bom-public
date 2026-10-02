@@ -6,7 +6,7 @@ const BUILTIN=JSON.parse(document.getElementById('catalog').textContent);
 let CAT=BUILTIN, CATMETA={version:ENG.settings(BUILTIN).Catalog_Version,source:'Built-in catalog',publishedAt:null};
 const SET=()=>ENG.settings(CAT);
 const nid=()=>'L'+Math.random().toString(36).slice(2,8);
-const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all',gwLink:'best',upSpeed:''},
+const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all',gwLink:'best',upSpeed:'',priority:'best'},
   endpoints:CAT.Endpoints.map(e=>({...e})),
   locations:[{id:nid(),name:'Main equipment room',type:'MDF',distance:3,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-TX',qty:16},{ep:'EP-10G-TX',qty:4},{ep:'EP-DANTE',qty:8}]},
     {id:nid(),name:'Closet 1',type:'IDF',distance:150,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:24},{ep:'EP-PTZ',qty:4},{ep:'EP-WBE758',qty:4}]},
@@ -72,6 +72,7 @@ function renderInputs(){
       <label class="fld"><span>Core-to-core link sizing</span>${sel('islRule',[['failover','Busiest switch (failover)'],['half','Half of all traffic'],['full','All traffic (non-blocking)']])}</label>
       ${P.gateway?`<label class="fld"><span>Router link</span>${sel('gwLink',[['best','Best available in main room'],['10g','10G required']])}</label>`:''}
       <label class="fld"><span>Support contract</span>${supportSel()}</label>
+      ${team()?`<label class="fld"><span>Design priority (internal)</span>${sel('priority',[['best','Best design (fewest switches)'],['cost','Lowest cost']])}</label>`:''}
       ${team()?`<label class="fld"><span>Core model</span><select data-p="coreOverride">${swOpts(P.coreOverride||'Auto')}</select></label>
       <label class="fld"><span>Separate dual uplinks</span>${sel('dualUplink',[['true','Always 2+ uplinks'],['false','Single uplink allowed']])}</label>`:''}
     </div>`:'';
@@ -177,8 +178,8 @@ function renderResults(){
   const out=$('#out');
   if(tab==='diagram') out.innerHTML=errs()+`<div class="scroll">${diagram(false)}</div><p class="cap">Green lines are uplinks, labelled with link count, speed and the optic or cable used. With a redundant core, every switch has its own full-capacity link group to each core, so either core can carry all traffic alone.</p>`;
   if(tab==='bom'){ const rows=rollup();
-    out.innerHTML=errs()+`<div class="scroll"><table class="t"><thead><tr><th>Part number</th><th>Description</th><th class="r">Qty</th><th>Where</th>${team()?'<th>Notes</th>':''}</tr></thead><tbody>${
-      CATORDER.filter(c=>rows.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${team()?5:4}">${c}</td></tr>`+rows.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join('')}</tbody></table></div>
+    out.innerHTML=errs()+`<div class="scroll"><table class="t"><thead><tr><th>Part number</th><th>Brand</th><th>Description</th><th class="r">Qty</th><th>Where</th>${team()?'<th>Notes</th>':''}</tr></thead><tbody>${
+      CATORDER.filter(c=>rows.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${team()?6:5}">${c}</td></tr>`+rows.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.brand||'')}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join('')}</tbody></table></div>
       <p class="cap">Part numbers are for ${esc(state.project.region)}${state.project.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.</p>`; }
   if(tab==='power'){ const P=state.project, locs=[...new Set(result.power.map(p=>p.loc))], eff=+T.PSU_Efficiency||0.9;
     out.innerHTML=`<div class="closets">${locs.map(l=>{ const r=roomPower(l);
@@ -518,7 +519,7 @@ async function saveFile(name,data){
   catch(e){ console.error('Download failed',e); toast('Could not save the file.'); }
 }
 const discRow=()=>[['ESTIMATE ONLY: '+(result.settings.Disclaimer||'')],['Validation: '+(result.settings.Validation_Contact_Email||'')],['Catalog version: '+CATMETA.version],[]];
-function exportCsv(){ const rows=[...discRow(),['Category','Part number','Description','Qty','Where'],...rollup().map(r=>[r.cat,r.sku,r.desc,r.qty,[...r.locs].join('; ')])];
+function exportCsv(){ const rows=[...discRow(),['Category','Part number','Brand','Description','Qty','Where'],...rollup().map(r=>[r.cat,r.sku,r.brand||'',r.desc,r.qty,[...r.locs].join('; ')])];
   track('bom'); saveFile(`${slug()}-bom.csv`,rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n')); }
 function exportSvg(){ saveFile(`${slug()}-network.svg`,diagram(true)); track('diagram'); }
 function buildXlsx(){ if(!window.XLSX){ toast('Spreadsheet library did not load.'); return null; }
@@ -526,8 +527,8 @@ function buildXlsx(){ if(!window.XLSX){ toast('Spreadsheet library did not load.
   const info=[...discRow(),['Project',P.name],['Created',new Date().toISOString().slice(0,10)],['Region',P.region],['TAA required',P.taa?'Yes':'No'],['Redundant power',P.psuRed?(P.psuScope==='mdf'?'Main equipment room only':'All switches'):'No'],['Redundant core',P.dualCore?'Yes':'No'],['Design basis',P.basis==='line'?'Line-rate':'Stream'],['Oversubscription',P.oversub+':1'],['Mains voltage',P.voltage],[],['Room','Type','Device','Qty','Link Gbps','Media','PoE W']];
   state.locations.forEach(L=>L.eps.forEach(e=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep)||{}; info.push([L.name,L.type,ep.Name,e.qty,ep.Link_Speed_Gbps,ep.Media,ep.PoE_W]); }));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),'Project');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([...discRow(),['Category','Part number','Description','Qty','Where','Notes'],...rollup().map(r=>[r.cat,r.sku,r.desc,r.qty,[...r.locs].join('; '),r.note])]),'BoM');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Room','Category','Part number','Description','Qty'],...result.bom.map(b=>[b.loc,b.cat,b.sku,b.desc,b.qty])]),'BoM by room');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([...discRow(),['Category','Part number','Brand','Description','Qty','Where','Notes'],...rollup().map(r=>[r.cat,r.sku,r.brand||'',r.desc,r.qty,[...r.locs].join('; '),r.note])]),'BoM');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Room','Category','Part number','Brand','Description','Qty'],...result.bom.map(b=>[b.loc,b.cat,b.sku,b.brand||'',b.desc,b.qty])]),'BoM by room');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Room','Device','Qty','PoE load each W','Power supplies','PoE available W','Headroom %','Est draw each W','Datasheet max each W'],...result.power.map(p=>[p.loc,p.model,p.n,Math.round(p.poe),p.cfg,p.budget,p.head===null?'':Math.round(p.head*100),Math.round(p.est),p.max])]),'Power');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Level','Message'],...result.errors.map(e=>['error',e.loc+': '+e.msg]),...result.notes.map(n=>[n.lvl,n.msg])]),'Checks');
   return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})]); }
@@ -685,7 +686,7 @@ async function buildPdf(v={}){
   // --- bill of materials ---
   doc.addPage(fmtName,'portrait'); y=M+16; h2('Bill of materials');
   const R=rollup(), bom=[]; CATORDER.filter(c=>R.some(r=>r.cat===c)).forEach(c=>{ bom.push([{content:c.toUpperCase(),colSpan:4,styles:{fontStyle:'bold',fontSize:7.5,textColor:AVD,fillColor:G1}}]);
-    R.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); });
+    R.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.brand&&r.brand!=='NETGEAR'?`${r.brand}: ${r.desc}`:r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); });
   y=at({startY:y,head:[['Part number','Description','Qty','Where']],body:bom,columnStyles:{0:{cellWidth:100,fontStyle:'bold'},2:{halign:'right',cellWidth:34},3:{cellWidth:120,textColor:MUT}},
     didParseCell:d=>{ if(d.section==='head'&&d.column.index===2) d.cell.styles.halign='right'; }})+12;
   para(`Part numbers are for ${P.region}${P.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.`);

@@ -20,6 +20,8 @@ function timingOk(p,D){ return (!D.needBC||hasBC(p)) && (!D.needAVB||hasAVB(p));
 const linkCost = s => 0.4 + s/40;
 const CORE_PORT = 10; // "fastest uplinks" strategy: each uplink also uses a core port, so fewer, faster links win
 const TBD_PENALTY = 40;
+const BEST_SWITCH = 30, BEST_LINK = 2; // "Best design": every extra switch and uplink weighs heavily, so fewer, larger switches win
+const TP_PENALTY = 3; // third-party module for the distance: valid, but a catalog part wins when it does the same job
 const PREF_MISS = 200; // preferred uplink speed not used: the user's choice wins whenever a switch and core can run it // a part missing from the catalog makes the design unorderable: worth more than an extra switch
 function candidates(cat,S,role){
   return cat.Products.filter(p=>p.Category==='Switch' && (p.Lifecycle_Status||'Active')==='Active'
@@ -84,7 +86,10 @@ function scoreUnit(cat,p,psu){
   return (f&&price?price/f:estUnit(p)) + ps + oh;
 }
 // one uplink: two optics or one cable, priced when the catalog has prices
-function linkPts(cat,lk,speed){ const f=ppu(cat), pr=f&&!lk.tbd?priceOf(cat,lk.sku):0; return pr?pr*lk.perLink/f:linkCost(speed); }
+function linkPts(cat,lk,speed,media){
+  const f=ppu(cat); let pr=f&&!lk.tbd?priceOf(cat,lk.sku):0;
+  if(f&&lk.tp){ const ref=cat.Accessories.find(a=>a.Category==='Optic'&&N(a.Speed_Gbps)===speed&&String(a.Media)===media&&!/pack/i.test(a.Description||'')); pr=ref?priceOf(cat,ref.Orderable_SKU)*1.5:0; }
+  return pr?pr*lk.perLink/f:linkCost(speed); }
 // greedy assign endpoint classes to port types; returns remaining counts or null
 function assign(PT,avail,classes,cuMods){
   const rem={...avail}, mods={};
@@ -143,11 +148,13 @@ function evalN(cat,PT,p,D,n,S,ctx){
       let u; if(noLag) u=need===1?(S.dualCore?2:1):0;
       else if(S.dualCore){ const per=S.lagSizes.filter(x=>x<=S.maxLag).sort((a,b)=>a-b).find(x=>x>=need); u=per?per*2:0; }
       else u=lagSizes(S).find(x=>x>=need);
-      if(u && u<=av){ const lk=pickLink(cat,s,ctx.media,ctx.dist,ctx.inRack&&!(ctx.quad&&isNeutrik(p)),[p]); fits.push({speed:s,u,tbd:!!lk.tbd,lp:linkPts(cat,lk,s)}); }
+      if(u && u<=av){ const lk=pickLink(cat,s,ctx.media,ctx.dist,ctx.inRack&&!(ctx.quad&&isNeutrik(p)),[p]); fits.push({speed:s,u,tbd:!!lk.tbd,tp:!!lk.tp,lp:linkPts(cat,lk,s,ctx.media)}); }
     }
     // strategy: slowest speed that fits (low), fewest links (fewest) or fastest speed (fast); speeds with a catalog optic first
     const order={low:(a,b)=>a.speed-b.speed, fast:(a,b)=>b.speed-a.speed, fewest:(a,b)=>a.u-b.u||a.speed-b.speed, cost:(a,b)=>a.u*a.lp-b.u*b.lp||a.speed-b.speed}[S.upPref]||((a,b)=>a.speed-b.speed);
-    fits.sort((a,b)=>(a.tbd?1:0)-(b.tbd?1:0)||order(a,b));
+    // catalog optics first, then a third-party module that covers the distance, then a placeholder
+    const rank=f=>f.tbd?(f.tp?1:2):0;
+    fits.sort((a,b)=>rank(a)-rank(b)||order(a,b));
     // preferred uplink speed (Design options): use it whenever the ports allow, even if the catalog has no optic for the distance
     const pref=N(S.upSpeed)&&fits.find(f=>f.speed===N(S.upSpeed)); if(pref){ fits.splice(fits.indexOf(pref),1); fits.unshift(pref); if(pref.tbd) pref.pref=true; }
     up=fits[0]; if(!up) return null; if(!up.tbd) delete up.tbd; const lp=up.lp; delete up.lp; up.lp_=lp;
@@ -157,7 +164,7 @@ function evalN(cat,PT,p,D,n,S,ctx){
   const psu=psuPick(cat,p,needW,S); if(!psu) return null;
   // RJ45 SFP modules are a fallback: a switch with native copper ports should win whenever one fits
   const modCost=Object.entries(A.mods).reduce((a,[sp,q])=>{ const m=ctx.cuMods&&ctx.cuMods[sp]; const pr=ppu(cat)&&typeof m==='object'?priceOf(cat,m.Orderable_SKU):0; return a+q*(4+(pr?pr/ppu(cat):0)); },0); // fallback: the module's price plus a penalty, so native copper ports win
-  return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(cat,p,psu)+modCost+(up.tbd?(up.pref?2:TBD_PENALTY):0)+(N(S.upSpeed)&&up.u&&up.speed!==N(S.upSpeed)?PREF_MISS:0)+up.u*((up.lp_!==undefined?up.lp_:linkCost(up.speed))+(S.upPref==='fast'?CORE_PORT:0)))};
+  return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(cat,p,psu)+modCost+(up.tbd?(up.pref||up.tp?TP_PENALTY:TBD_PENALTY):0)+(N(S.upSpeed)&&up.u&&up.speed!==N(S.upSpeed)?PREF_MISS:0)+up.u*((up.lp_!==undefined?up.lp_:linkCost(up.speed))+(S.upPref==='fast'?CORE_PORT:0)+(S.priority==='best'?BEST_LINK:0))+(S.priority==='best'?BEST_SWITCH:0))};
 }
 // Neutrik etherCON switches (e.g. M4350-16M4V) only when the room asks for them; a Neutrik room only gets them
 const isNeutrik=p=>N(p.Neutrik_etherCON_Ports)>0;
@@ -167,7 +174,7 @@ function bestFor(cat,PT,D,S,ctx,forced){
   const keep=r=>{ alts.push(r); if(!best||r.score<best.score) best=r; };
   for(const p of list){ let tbd=null;
     for(let n=1;n<=48;n++){ const r=evalN(cat,PT,p,D,n,S,ctx); if(!r) continue;
-      if(!r.up.tbd){ keep(r); tbd=null; break; }
+      if(!r.up.tbd||r.up.tp){ keep(r); tbd=null; break; }
       // a placeholder optic (e.g. 25G beyond multimode reach) may be avoidable with more units at a lower speed
       if(!tbd) tbd=r; else if(n>tbd.n+2) break; }
     if(tbd) keep(tbd); }
@@ -272,6 +279,12 @@ function thirdParty(speed,media,dist){
   if(media==='SMF') return `third-party ${speed}G ER/ZR module for ${dist} m (not in the NETGEAR catalog; confirm compatibility)`;
   return 'not in the NETGEAR catalog';
 }
+// a third-party module type exists for this speed, fiber and distance (extended-reach multimode, ER/ZR single mode)
+function tpModule(speed,media,dist){
+  if(media==='MMF'){ const r={10:400,25:300,40:400,100:300}[speed]; return r&&dist<=r?(speed===100?'eSR4':'eSR'):null; }
+  if(media==='SMF') return dist<=40000?'ER':null;
+  return null;
+}
 function pickLink(cat,speed,media,dist,inRack,ends){
   const A=cat.Accessories.filter(a=>fitsEnds(cat,a,ends));
   // NETGEAR-branded parts before third-party (optic.ca, -OC) when both fit
@@ -286,6 +299,9 @@ function pickLink(cat,speed,media,dist,inRack,ends){
     // LRM and PSM4 (8-fiber MPO trunk) only when nothing else reaches
     .sort((a,b)=>(/LRM|PSM4/.test(a.Description)?1:0)-(/LRM|PSM4/.test(b.Description)?1:0) || N(a.Reach_m)-N(b.Reach_m) || brand(a,b));
   if(o.length) return {sku:o[0].Orderable_SKU,desc:o[0].Description,perLink:2,cat:'Optics'};
+  // when a third-party module type covers the distance, it is a part to buy, not a design problem (Tool_Settings Allow_Third_Party_Optics)
+  const tp=!/^no/i.test(String(settings(cat).Allow_Third_Party_Optics||'Yes'))&&tpModule(speed,media,dist);
+  if(tp) return {sku:`3P-${speed}G-${tp}-${media}`,desc:`${speed}G ${media} transceiver, ${dist} m: ${thirdParty(speed,media,dist)}`,perLink:2,cat:'Optics',tbd:true,tp:true};
   return {sku:`TBD-${speed}G-${media}`,desc:`${speed}G ${media} transceiver, ${dist} m: ${thirdParty(speed,media,dist)}`,perLink:2,cat:'Optics',tbd:true};
 }
 const REG={Americas:['Americas','North America','US'],Europe:['Europe','Americas / Europe'],APAC:['Asia Pacific','Other APAC','Australia','Japan'],China:['China']};
@@ -316,7 +332,7 @@ function splitUnits(items,n,S){
 }
 // Build the whole design with each uplink strategy and keep the cheapest one that works, core included.
 const STRATEGIES=['low','fewest','fast','cost'];
-function design(cat,state){
+function designBy(cat,state){
   const runs=STRATEGIES.map(p=>({p,r:designOnce(cat,state,p)}));
   const ok=runs.filter(x=>!x.r.errors.length);
   if(!ok.length) return runs[0].r;
@@ -344,6 +360,26 @@ function design(cat,state){
     best.notes=[...w.r.notes.filter(n=>/faster uplinks/i.test(n.msg)),...best.notes.filter(n=>!/faster uplinks/i.test(n.msg))]; best.notes.unshift({lvl:'info',msg:'A different room switch was chosen where it allows a smaller core, so the whole design costs less.'}); }
   best.strategy=w.p; return best;
 }
+// BoM total on the catalog's cost scale (Cost_Index or list price), for comparing designs; third-party modules are not counted
+function bomCost(cat,r){
+  return r.bom.reduce((t,b)=>{ const s=cat.SKUs.find(x=>x.Orderable_SKU===b.sku), p=s&&cat.Products.find(x=>x.Product_ID===s.Product_ID), a=!p&&cat.Accessories.find(x=>x.Orderable_SKU===b.sku);
+    return t+(p?cost(p):(a?cost(a):0))*b.qty; },0);
+}
+// Design priority (project option): 'best' (default, shown to customers) ranks designs by simplicity, fewest switches and
+// uplinks first; 'cost' (internal option) is the lowest-cost design. A best design that costs more than
+// Best_Design_Cost_Margin_Pct over the cheapest valid one falls back to the cheaper design.
+function design(cat,state){
+  const pr=state.project.priority==='cost'?'cost':'best';
+  const best=designBy(cat,{...state,project:{...state.project,priority:pr}});
+  if(pr==='cost') { best.priority='cost'; return best; }
+  const cheap=designBy(cat,{...state,project:{...state.project,priority:'cost'}});
+  if(best.errors.length&&!cheap.errors.length) { cheap.priority='cost'; return cheap; }
+  const T=settings(cat), m=T.Best_Design_Cost_Margin_Pct===undefined?30:N(T.Best_Design_Cost_Margin_Pct);
+  const cb=bomCost(cat,best), cc=bomCost(cat,cheap), sw=r=>r.bom.filter(b=>b.cat==='Switches').reduce((t,b)=>t+b.qty,0);
+  if(cc&&cb>cc*(1+m/100)){ cheap.notes.unshift({lvl:'info',msg:`A design with fewer switches exists but costs ${Math.round((cb/cc-1)*100)}% more, above the ${m}% limit, so the lower-cost design is shown.`}); cheap.priority='cost'; return cheap; }
+  if(cc&&cb>cc*1.005&&sw(best)<sw(cheap)) best.notes.unshift({lvl:'info',msg:`Best design: ${sw(best)} switches instead of ${sw(cheap)}, for about ${Math.round((cb/cc-1)*100)}% more hardware cost than the lowest-cost design.`});
+  best.priority='best'; return best;
+}
 function designOnce(cat,state,upPref){
   const S={...state.project,upPref}, T=settings(cat), PT=portTypes(cat);
   S.maxLag=N(T.Max_LAG_Members)||8; S.minUp=N(T.Min_Uplink_Gbps)||1; S.streamHead=T.Stream_Uplink_Headroom_Pct===undefined?50:N(T.Stream_Uplink_Headroom_Pct); S.lagSizes=String(T.Uplink_LAG_Sizes||'1,2,4,8').split(/[,; ]+/).map(Number).filter(x=>x>0); const inRackMax=N(T.In_Rack_Max_m)||20, eff=N(T.PSU_Efficiency)||0.9;
@@ -352,7 +388,9 @@ function designOnce(cat,state,upPref){
     [supTier,supYrs]=typeof S.support==='number'?(S.support?['DRV',S.support]:['',0]):String(S.support||'').split(':').map((x,i)=>i?+x:x), gwId=T.Gateway_Product_ID||'PR460X';
   const notes=[], bom=[], links=[], power=[];
   const epById=Object.fromEntries(state.endpoints.map(e=>[e.Endpoint_ID,e]));
-  const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||''}; bom.push(l);} l.qty+=qty; };
+  // brand shown in the BoM: NETGEAR for products, Accessories.Brand for parts, 'Third party' for modules bought elsewhere
+  const brandOf=sku=>{ if(/^3P-/.test(sku)) return 'Third party'; if(/^TBD-/.test(sku)) return ''; const a=cat.Accessories.find(x=>x.Orderable_SKU===sku); return a?(a.Brand||'NETGEAR'):'NETGEAR'; };
+  const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||'',brand:brandOf(sku)}; bom.push(l);} l.qty+=qty; };
   const locs=state.locations.map(L=>({...L,items:L.eps.map(x=>({ep:epById[x.ep],qty:x.qty})).filter(x=>x.ep)}));
   const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,CUM[k]]));
   const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik',quad:L.card==='quad'}; };
@@ -451,11 +489,12 @@ function designOnce(cat,state,upPref){
     if(card){ add(card.Orderable_SKU,card.Description,b.n,'Optics',L.name,'opticalCON uplink card, replaces the shipped APM414V');
       notes.push({lvl:'info',msg:`${L.name}: the ${p.Model_Name} uplinks use the ${card.Base_Model} opticalCON QUAD card (${card.Media==='SMF'?'single mode':'multimode'}) with ${lk.sku} optics in its internal cages. Order Neutrik opticalCON QUAD field cables, and an opticalCON-to-LC fan-out at the ${core&&core.p?core.p.Model_Name:'other'} end (not in this BoM).`}); }
     // optics: one at the room switch, one at the core, each booked where it is installed
-    if(lk.perLink===2&&core&&core.p){ add(lk.sku,lk.desc,q,lk.cat,L.name,lk.tbd?'Not in catalog yet':'Room end of uplinks'); add(lk.sku,lk.desc,q,lk.cat,coreLoc,lk.tbd?'Not in catalog yet':'Core end of room uplinks'); }
+    if(lk.perLink===2&&core&&core.p){ add(lk.sku,lk.desc,q,lk.cat,L.name,lk.tp?'Third-party module, buy separately (room end)':lk.tbd?'Not in catalog yet':'Room end of uplinks'); add(lk.sku,lk.desc,q,lk.cat,coreLoc,lk.tp?'Third-party module, buy separately (core end)':lk.tbd?'Not in catalog yet':'Core end of room uplinks'); }
     else add(lk.sku,lk.desc,q*lk.perLink,lk.cat,L.name,lk.tbd?'Not in catalog yet':(lk.perLink===2?'2 per link (both ends)':'1 per link'));
     if(core&&core.p) corePorts.push({loc:L.name,speed:b.up.speed,perCore:q/(core.k||1),sku:lk.sku,kind:lk.perLink===2?'optic':'cable'});
     if(lk.tbd){ const reach=Math.max(0,...cat.Accessories.filter(a=>a.Category==='Optic'&&N(a.Speed_Gbps)===b.up.speed&&String(a.Media)===ctx.media).map(a=>N(a.Reach_m)));
-      if(b.up.pref) notes.push({lvl:'warn',msg:`${L.name}: ${b.up.speed}G was chosen as the uplink speed, but no NETGEAR or validated optic.ca module reaches ${ctx.dist} m on ${ctx.media}. The BoM lists a placeholder: ${thirdParty(b.up.speed,ctx.media,ctx.dist)}.`});
+      if(lk.tp) notes.push({lvl:'warn',msg:`${L.name}: no NETGEAR or validated optic.ca module reaches ${ctx.dist} m on ${ctx.media} at ${b.up.speed}G, so the BoM includes ${lk.sku}: ${thirdParty(b.up.speed,ctx.media,ctx.dist)}. Purchase it from a third party and confirm compatibility with the ProAV Design team, or use ${ctx.media==='MMF'?'single-mode fiber for this room':'a shorter run'} to stay with catalog optics.`});
+      else if(b.up.pref) notes.push({lvl:'warn',msg:`${L.name}: ${b.up.speed}G was chosen as the uplink speed, but no NETGEAR or validated optic.ca module reaches ${ctx.dist} m on ${ctx.media}. The BoM lists a placeholder: ${thirdParty(b.up.speed,ctx.media,ctx.dist)}.`});
       else notes.push({lvl:'warn',msg:`${L.name}: no ${b.up.speed}G ${ctx.inRack?'cable':'optic'} in the catalog for ${ctx.dist} m`+(core&&core.p?` that fits both the ${p.Model_Name} and the ${core.p.Model_Name}`:'')+'. Placeholder added.'+(!ctx.inRack&&reach?` ${b.up.speed}G ${ctx.media} optics reach ${reach} m; use single-mode fiber (SMF) for this room or a shorter run.`:'')}); }
     links.push({loc:L.name,model:p.Model_Name,n:b.n,speed:b.up.speed,u:b.up.u,optic:lk.sku,dist:ctx.dist,media:inRack?'in-rack':(card?ctx.media+' opticalCON':ctx.media)});
   }

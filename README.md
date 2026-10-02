@@ -11,7 +11,7 @@ flowchart LR
     A["Rooms and devices"] --> B["Room switches<br/>ports, PoE, power, timing"]
     B --> C["Uplinks<br/>speed, LAG size, optic"]
     C --> D["Core<br/>collapsed or dedicated"]
-    D --> E["Compare whole designs<br/>keep the cheapest"]
+    D --> E["Compare whole designs<br/>keep the best design<br/>(cost as a safety net)"]
     E --> F["Router placement"]
     F --> G["BoM, power plan,<br/>diagram, PDF report"]
 ```
@@ -37,7 +37,7 @@ flowchart LR
 - **Line-rate (default):** every device counts at its full link speed, so the design is non-blocking. Stream mode uses each device's typical stream bandwidth instead.
 - **Uplink groups use 1, 2, 4 or 8 links,** so link aggregation (LAG) hashing spreads traffic evenly. On stream bandwidth, uplinks keep a 50% margin over the stream total (`Stream_Uplink_Headroom_Pct`).
 - **Collapsed core:** a single main-room switch with enough free ports is also the core, so small designs need no extra core switch.
-- **The whole design is compared, core included:** slowest uplinks, fewest links and fastest uplinks are each tried, and so are each room's close alternative switches. The cheapest complete design wins, so a room is not moved to 25G when that would force a bigger core.
+- **Best design first:** among all valid designs, the one with the fewest switches and uplinks wins; cost is only a safety net (30%). Long runs that no catalog optic covers get a third-party module (for example 25GBASE-eSR) in the BoM instead of extra switches, with a warning. Every BoM line shows its brand (NETGEAR, optic.ca, Third party).
 - **Parts must fit both ends:** optics and cables are checked against the Compatibility sheet for the room switch and the core, so an M4500-only optic never lands on an M4350. The PR460X gateway takes no DAC, so it gets 10G SR optics.
 - **Timing needs per device type:** `PTP-BC` (boundary clock, e.g. ST 2110) and `AVB` (Milan) limit which switches and cores are used. Devices without a timing need still go on the cheapest switch, for example M4250 for Dante.
 - **Router (PR460X):** on a free 10G port of the core when there is one. Otherwise it stays in the main room at the best speed available (10G, else 2.5G/1G copper or a 1G module, with a note), and only goes to a closet when the main room has no free port. The "Router link" option "10G required" makes the main-room switch keep a 10G port free for it, which can mean a bigger switch.

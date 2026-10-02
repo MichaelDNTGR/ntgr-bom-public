@@ -1,6 +1,6 @@
 // Validation scenarios for uplink / optic selection. `expect` is what a ProAV designer would want to see.
 const base = {region:'Americas',taa:false,psuRed:false,dualUplink:false,dualCore:false,basis:'line',oversub:1,spare:10,poeHead:20,
-  voltage:110,gateway:false,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'};
+  voltage:110,gateway:false,support:'',priority:'best',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'};
 const L = (name, type, distance, media, eps) => ({id:name, name, type, distance, media, override:'Auto', eps:eps.map(([ep,qty])=>({ep,qty}))});
 const MDF = (eps=[]) => L('Main equipment room','MDF',3,'MMF',eps);
 const S = (id, title, expect, project, locations, extraEndpoints=[]) => ({id, title, expect, project:{...base, name:`${id} ${title}`, ...project}, locations, extraEndpoints});
