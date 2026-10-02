@@ -183,7 +183,7 @@ function diagram(forExport,pal){
   if(!locs.length) return `<p class="empty">Add devices to a room to see the network.</p>`;
   const core=result.core, cc=!!(core&&core.collapsed), coreRoom=cc?locs.find(L=>L.name===core.loc):null, row=cc?locs.filter(L=>L!==coreRoom):locs;
   const colW=250, gap=24, W=Math.max(760,row.length*(colW+gap)+gap), gwOn=state.project.gateway, gwRoom=result.gateway&&result.gateway.loc!=='core'?result.gateway:null;
-  const G=result.gateway, gwLbl=G?[`1 × ${G.speed||10}G`+(G.via==='copper'?' copper':''),G.via==='copper'?`${(G.speed||10)>=10?'Cat6a':'Cat6'}, ${G.dist} m`:`${G.sku}${G.via==='fiber'?', both ends':''}${G.dist&&G.loc!=='core'?`, ${G.dist} m`:''}`]:null;
+  const G=result.gateway, gwLbl=G?[`1 × ${G.speed||10}G`+(G.via==='copper'?' copper':''),G.via==='copper'?`${(G.speed||10)>=10?'Cat6a':'Cat6'}, ${G.dist} m`:`${G.sku}${G.dist&&G.loc!=='core'?`, ${G.dist} m`:''}`]:null;
   // core box lists what plugs into it, so it grows with the number of room groups
   // one row per room, speed and part (a room with two switch groups shows its total)
   const cports=core&&core.ports&&!cc?Object.values(core.ports.reduce((m,r)=>{ const k=[r.loc,r.speed,r.sku,!!r.isl,!!r.first].join('|'); (m[k]=m[k]||{...r,perCore:0}).perCore+=r.perCore; return m; },{})):[], CL=15, coreH=core?(cports.length?84+cports.length*CL:62):0;
