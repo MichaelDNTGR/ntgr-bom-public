@@ -111,7 +111,7 @@ module.exports = [
     'Fastlane is not listed for M4500: a warning and no support SKU for those switches (M4350 closets still get FLS SKUs).',
     {spare:0, dualCore:true, support:'FLS:1'}, [MDF(), ...[1,2,3,4,5,6].map(i=>L(`Closet ${i}`,'IDF',100,'MMF',[['EP-10G-TX',6]]))]),
   S('V35','Neutrik stage rack, redundant power',
-    'Stage room set to Neutrik etherCON: 8 Dante + 4 PTZ cameras on an M4350-16M4V (built-in 1+1 PSUs), 25G uplink on the APM414V card. The closet with standard connectors keeps a standard switch.',
+    'Stage room set to Neutrik etherCON: 8 Dante + 4 PTZ cameras on an M4350-16M4V (built-in 1+1 PSUs); its fiber uplink uses the APM414SD opticalCON QUAD card with optics inside, plus a note for the opticalCON field cables. The closet with standard connectors keeps a standard switch.',
     {gateway:true, psuRed:true, spare:10}, [MDF([['EP-DANTE',4]]), {...L('Stage','IDF',80,'MMF',[['EP-DANTE',8],['EP-PTZ',4]]), conn:'neutrik'}, L('Closet 1','IDF',100,'MMF',[['EP-1G-RX',8]])]),
   S('V36','100G closets, single core',
     'Four closets of 20 x 10G video: the smallest core that terminates everything. The engine fills an M4350-16V4C (2 closets on 100G, 2 on 25G) rather than buying an M4350-16C; optic.ca SR4 for 100G (ACM761 is M4500 only).',

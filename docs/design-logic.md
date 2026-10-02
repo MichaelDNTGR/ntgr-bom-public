@@ -132,9 +132,9 @@ This favors the smallest switch that passes all checks, and M4250 over M4350 whe
 
 ### Neutrik etherCON rooms
 
-Each room has a **Connectors** setting: Standard RJ45 (default) or Neutrik etherCON. Switches with Neutrik ports (today the M4350-16M4V: 8 etherCON front, 8 RJ45 rear, 16 × 2.5G PoE++, 1+1 internal PSUs) are only used in Neutrik rooms, and a Neutrik room only gets Neutrik switches. They are never used as a dedicated core. If a Neutrik room is too large for one model, the room shows an error suggesting a split or Standard RJ45.
+Each room has a **Connectors** setting: Default (RJ45 and LC fiber) or Neutrik (etherCON and opticalCON). Switches with Neutrik ports (today the M4350-16M4V: 8 etherCON front, 8 RJ45 rear, 16 × 2.5G PoE++, 1+1 internal PSUs) are only used in Neutrik rooms, and a Neutrik room only gets Neutrik switches. They are never used as a dedicated core. If a Neutrik room is too large for one model, the room shows an error suggesting a split or Standard RJ45.
 
-The 16M4V's interface card slot is modelled with the card it ships with (APM414V, 4 × SFP28 10G/25G). The other cards (APM414C 4 × 10GBASE-T, APM414SD/LD opticalCON QUAD for multimode or single mode) are in the catalog but not yet chosen by the tool.
+In a Neutrik room, the 16M4V's fiber uplinks use an opticalCON QUAD interface card instead of the shipped APM414V: APM414SD for multimode, APM414LD for single mode. Standard SFP+/SFP28 optics go in the card's internal cages, so main-room links use optics rather than DAC. The opticalCON QUAD field cables and an opticalCON-to-LC fan-out at the core end are flagged in Checks but not in the BoM (no part numbers yet). In a Default room the 16M4V is not used, and the APM414V card is never swapped. The APM414C (4 × 10GBASE-T) card is in the catalog but not chosen by the tool.
 
 ### Mixed rooms
 
@@ -278,7 +278,7 @@ node tools/validation/run.js              # check the validation scenarios
 ## Known limits
 
 - No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest. The scores for switches, cores and links are estimates; adding `List_Price_USD` to Products (and prices for optics) makes every comparison above a real cost comparison.
-- M4350-16M4V interface cards other than the shipping APM414V are not chosen by the tool yet.
+- Neutrik opticalCON field cables are not in the catalog, and the APM414C (10GBASE-T) card is not chosen by the tool.
 - On the M4350, AVB uses only one link of a LAG (the others are backup); the engine still sizes AVB uplinks on the LAG total.
 - QSFP28 breakout (4 × 25G / 4 × 10G) is not used yet. A core that must take many 100G links plus some 10G/25G links (for example 12 × 100G and one 10G closet) has no fit today; the engine shows an error.
 - M4500 is not used for devices that need AVB or a PTP boundary clock (its datasheet lists neither), and Fastlane is not listed for it (Sprint and Overdrive are).

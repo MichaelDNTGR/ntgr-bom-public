@@ -41,7 +41,7 @@ node tools/catalog_from_xlsx.js --check   # JSON still matches the workbook (nee
 | V27 | Same, no redundant power | M4250-9G1F-PoE+; router on a free 1G copper port, with a 1G alert | OK |
 | V28 | 9G1F with all copper ports used | Router on 2 × AGM731F 1G modules, with an alert to confirm 1G on the PR460X SFP+ port | OK |
 | V25 | Default demo design, gateway on | Core M4350-24F4V: 23 of 28 ports (8 × 10G DAC main room, 8 × 10G Closet 1, 6 × 10G Closet 2, 1 × 10G router). Core-end optics booked in the core location | OK |
-| V35 | Neutrik stage rack | Stage: M4350-16M4V (Neutrik, 1+1 PSU), 25G uplink; standard closet keeps an M4350-24G4XF | OK |
+| V35 | Neutrik stage rack | Stage: M4350-16M4V (Neutrik, 1+1 PSU), uplink through an APM414SD opticalCON card; standard closet keeps an M4350-24G4XF | OK |
 | V36 | Four 200G closets, single core | M4350-16V4C core filled completely (2 × 100G + 2 × 25G closets) | OK; no spare core ports |
 | V37 | ST 2110-30 audio + Dante | One M4350-24M4X4V (boundary clock), standalone | OK |
 | V33 | Overdrive 3 years | One DRV-<model>-36 per switch, access point and router | OK |
