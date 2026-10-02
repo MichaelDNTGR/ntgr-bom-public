@@ -40,7 +40,7 @@ flowchart LR
 - **The whole design is compared, core included:** slowest uplinks, fewest links and fastest uplinks are each tried, and so are each room's close alternative switches. The cheapest complete design wins, so a room is not moved to 25G when that would force a bigger core.
 - **Parts must fit both ends:** optics and cables are checked against the Compatibility sheet for the room switch and the core, so an M4500-only optic never lands on an M4350. The PR460X gateway takes no DAC, so it gets 10G SR optics.
 - **Timing needs per device type:** `PTP-BC` (boundary clock, e.g. ST 2110) and `AVB` (Milan) limit which switches and cores are used. Devices without a timing need still go on the cheapest switch, for example M4250 for Dante.
-- **Router (PR460X):** on a free 10G port of the core when there is one, otherwise on a room switch: 10G copper (Cat6a, up to 100 m) or 10G fiber, and as a last resort 1G copper or a 1G SFP module, with an alert in Checks.
+- **Router (PR460X):** on a free 10G port of the core when there is one. Otherwise it stays in the main room at the best speed available (10G, else 2.5G/1G copper or a 1G module, with a note), and only goes to a closet when the main room has no free port. The "Router link" option "10G required" makes the main-room switch keep a 10G port free for it, which can mean a bigger switch.
 - **Redundant core:** each switch has a full-capacity link group to each core switch, so either core can carry all traffic if the other fails. No stacking is used, which keeps AVB and PTP available.
 
 ```

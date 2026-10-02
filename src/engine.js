@@ -365,6 +365,7 @@ function designOnce(cat,state,upPref){
       if(!timingOk(p,coreDem)||(coreDem.needAVB&&avbNoLag(p)&&coreDem.lagged)) return null;
       const avail={...b.pre}, need={}; others.forEach(u=>need[u.b.up.speed]=(need[u.b.up.speed]||0)+u.b.up.u*u.b.n);
       for(const sp of Object.keys(need).map(Number).sort((a,b)=>b-a)){ let q=need[sp]; for(const t of PT.filter(t=>t.up&&supports(t,sp))){ const k=Math.min(q,avail[t.col]||0); avail[t.col]-=k; q-=k; } if(q>0) return null; }
+      if(S.gateway&&S.gwLink==='10g'&&!PT.some(t=>supports(t,10)&&(avail[t.col]||0)>0&&(t.media==='Copper'||t.media==='Fiber'))) return null; // keep a 10G port for the router
       uplinks.splice(0,uplinks.length,...others); coreDem.links=need;
       g.best={...b,up:{speed:0,u:0},free:avail};
       const an=accessNodes.find(a=>a.loc===mr.L.name); an.up={speed:0,u:0}; an.coreLinks=others.reduce((a,u)=>a+u.b.up.u*u.b.n,0); an.isCore=true;
@@ -405,32 +406,34 @@ function designOnce(cat,state,upPref){
         corePorts.push({loc:gw.Model_Name,speed:10,perCore:1,sku:lk.sku,kind:lk.perLink===2?'optic':'cable',first:true});
         if(lk.perLink===2) notes.push({lvl:'info',msg:`${gw.Model_Name} does not take DAC/AOC cables, so it connects to the core with ${lk.sku} optics on both ends and a multimode LC patch cord.`}); }
       else if(units>0&&!errors.length){
-        // no 10G port on the core (or standalone): use a free 10G port on a room switch, main room first, then the nearest closet
+        // no 10G port on the core (or standalone): place the router on a room switch, main room first, then the nearest closet.
+        // "best" (default): the main room at any speed before a closet; "10g": a 10G port anywhere before a slower one.
         const cuMax=N(T.Copper_10G_Max_m)||100, rooms=[...res].sort((a,b)=>(a.L.type==='MDF'?0:1)-(b.L.type==='MDF'?0:1)||N(a.L.distance)-N(b.L.distance));
-        for(const r of rooms){ if(gateway) break;
-          const mdf=r.L.type==='MDF', dist=mdf?(N(S.mdfPatch)||3):N(r.L.distance), media=r.L.media||'MMF';
-          for(const g of r.groups){ const b=g.best, f=b.free||{};
+        const coreNote=core&&core.p&&!core.collapsed?` The ${core.p.Model_Name} core has no free 10G port.`:'';
+        const place=(r,low)=>{ const mdf=r.L.type==='MDF', dist=mdf?(N(S.mdfPatch)||3):N(r.L.distance), media=r.L.media||'MMF';
+          for(const g of r.groups){ const b=g.best, f=b.free||{}, sw=b.p;
             const cu=PT.some(t=>t.media==='Copper'&&supports(t,10)&&(f[t.col]||0)>0);
             // a free SFP28 port cannot run 10G next to 25G uplinks in the same 4-port block
             const fib=PT.some(t=>t.media==='Fiber'&&supports(t,10)&&(f[t.col]||0)>0&&!(t.cage==='SFP28'&&b.up.speed===25));
-            if(cu&&dist<=cuMax){ gateway={loc:r.L.name,model:b.p.Model_Name,via:'copper',dist,speed:10};
-              notes.push({lvl:'info',msg:`${gw.Model_Name} connects to a free 10G copper port on the ${b.p.Model_Name} in ${r.L.name} with Cat6a (${dist} m, max ${cuMax} m for 10GBASE-T). Use the router's 10G RJ45 port as LAN.`+(core&&core.p&&!core.collapsed?` The ${core.p.Model_Name} core has no free 10G port.`:'')}); break; }
-            if(fib){ const lk=pickLink(cat,10,media,dist,false,[b.p,gw]); if(lk.tbd) continue;
-              add(lk.sku,lk.desc,lk.perLink,lk.cat,r.L.name,'Gateway link: optic at both ends');
-              gateway={loc:r.L.name,model:b.p.Model_Name,via:'fiber',sku:lk.sku,dist,speed:10};
-              notes.push({lvl:'info',msg:`${gw.Model_Name} connects to a free 10G fiber port on the ${b.p.Model_Name} in ${r.L.name} (${dist} m ${media}) with ${lk.sku} optics on both ends.`+(core&&core.p&&!core.collapsed?` The ${core.p.Model_Name} core has no free 10G port.`:'')}); break; }
-          } }
-        // no free 10G port anywhere: fall back to 1G / 2.5G, copper first (no parts), then a 1G SFP module on both ends
-        for(const r of rooms){ if(gateway) break; const mdf=r.L.type==='MDF', dist=mdf?(N(S.mdfPatch)||3):N(r.L.distance), media=r.L.media||'MMF';
-          for(const g of r.groups){ const f=g.best.free||{}, sw=g.best.p;
+            if(cu&&dist<=cuMax){ gateway={loc:r.L.name,model:sw.Model_Name,via:'copper',dist,speed:10};
+              notes.push({lvl:'info',msg:`${gw.Model_Name} connects to a free 10G copper port on the ${sw.Model_Name} in ${r.L.name} with Cat6a (${dist} m, max ${cuMax} m for 10GBASE-T). Use the router's 10G RJ45 port as LAN.`+coreNote}); return true; }
+            if(fib){ const lk=pickLink(cat,10,media,dist,false,[sw,gw]);
+              if(!lk.tbd){ add(lk.sku,lk.desc,lk.perLink,lk.cat,r.L.name,'Gateway link: optic at both ends');
+                gateway={loc:r.L.name,model:sw.Model_Name,via:'fiber',sku:lk.sku,dist,speed:10};
+                notes.push({lvl:'info',msg:`${gw.Model_Name} connects to a free 10G fiber port on the ${sw.Model_Name} in ${r.L.name} (${dist} m ${media}) with ${lk.sku} optics on both ends.`+coreNote}); return true; } }
+            if(!low) continue;
+            // slower: copper first (no parts), then a 1G SFP module on both ends
             const t=dist<=100&&PT.filter(t=>t.media==='Copper'&&(f[t.col]||0)>0).sort((a,b)=>b.max-a.max)[0];
-            if(t){ gateway={loc:r.L.name,model:sw.Model_Name,via:'copper',dist,speed:Math.min(10,t.max)};
-              notes.push({lvl:'warn',msg:`${gw.Model_Name} link is only ${gateway.speed}G: no free 10G port is left, so it uses a free ${gateway.speed}G copper port on the ${sw.Model_Name} in ${r.L.name} (${dist} m, Cat6 or better). Fine for most internet uplinks; choose a switch with a free 10G port if the site needs more.`}); break; }
+            if(t){ const sp=Math.min(10,t.max); gateway={loc:r.L.name,model:sw.Model_Name,via:'copper',dist,speed:sp};
+              notes.push({lvl:sp<2.5?'warn':'info',msg:`${gw.Model_Name} link is ${sp}G: it uses a free ${sp}G copper port on the ${sw.Model_Name} in ${r.L.name} (${dist} m, Cat6 or better), because no 10G port is free there. ${sp>=2.5?'Enough for most internet uplinks (the PR460X 2.5G WAN port runs up to 2.4 Gbps).':'Fine for most internet uplinks.'}${core&&core.collapsed&&S.gwLink!=='10g'?' Set "Router link" to 10G required to reserve a 10G port.':''}`}); return true; }
             if(PT.some(t=>t.media==='Fiber'&&supports(t,1)&&(f[t.col]||0)>0)){ const lk=pickLink(cat,1,media,dist,false,[sw,gw]); if(lk.tbd) continue;
               add(lk.sku,lk.desc,lk.perLink,lk.cat,r.L.name,'Gateway link (1G): module at both ends');
               gateway={loc:r.L.name,model:sw.Model_Name,via:'fiber',sku:lk.sku,dist,speed:1};
-              notes.push({lvl:'warn',msg:`${gw.Model_Name} link is only 1G: no free 10G or copper port is left, so it uses ${lk.sku} 1G modules on both ends (free SFP port on the ${sw.Model_Name} in ${r.L.name}, ${dist} m ${media}). Confirm the PR460X SFP+ port accepts a 1G module.`}); break; }
-          } }
+              notes.push({lvl:'warn',msg:`${gw.Model_Name} link is only 1G: no free 10G or copper port is left, so it uses ${lk.sku} 1G modules on both ends (free SFP port on the ${sw.Model_Name} in ${r.L.name}, ${dist} m ${media}). Confirm the PR460X SFP+ port accepts a 1G module.`}); return true; }
+          } return false; };
+        const mdfRooms=rooms.filter(r=>r.L.type==='MDF'), others=rooms.filter(r=>r.L.type!=='MDF');
+        const order=S.gwLink==='10g'?[[rooms,false],[rooms,true]]:[[mdfRooms,true],[others,false],[others,true]];
+        for(const [list,low] of order){ if(gateway) break; for(const r of list) if(place(r,low)) break; }
         if(!gateway&&!standalone) errors.push({loc:'Gateway',msg:`No free 10G port for the ${gw.Model_Name}: the ${core&&core.p?core.p.Model_Name+' core':'core'} has none, and no room switch has a free 10G copper port within ${cuMax} m or a 10G fiber port with a compatible optic. Contact the Pro AV Design team to place the router.`});
       }
       if(S.taa && !isTAA(gw)) notes.push({lvl:'warn',msg:`${gw.Model_Name} has no TAA-compliant SKU in the catalog.`});

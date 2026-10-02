@@ -98,4 +98,10 @@ module.exports = [
   S('V30','Dante + 1G video, line-rate, collapsed core',
     'Main room 7 Dante, closet 7 x 1G video decoders at line-rate: 10G SFP+ uplink, main-room M4250-8G2XF is also the core, router on its second SFP+.',
     {gateway:true, psuRed:false, spare:0, poeHead:0}, [MDF([['EP-DANTE',7]]), L('Closet 1','IDF',100,'MMF',[['EP-1G-RX',7]])]),
+  S('V31','Router link: best available in main room',
+    'One Dante device in the main room (redundant power: M4350-8M2V, also the core), two closets on 10G. Its SFP28 ports carry the closets, so the router uses a free 2.5G copper port on the 8M2V, not a closet switch 100 m away.',
+    {gateway:true, psuRed:true, gwLink:'best'}, [MDF([['EP-DANTE',1]]), L('Closet 1','IDF',100,'MMF',[['EP-1G-RX',8]]), L('Closet 2','IDF',100,'MMF',[['EP-1G-RX',8]])]),
+  S('V32','Router link: 10G required',
+    'Same rooms with "10G required": the main-room switch must keep a 10G port for the router, so a larger switch (M4350-24G4XF) becomes the core and the router gets 10G SFP+.',
+    {gateway:true, psuRed:true, gwLink:'10g'}, [MDF([['EP-DANTE',1]]), L('Closet 1','IDF',100,'MMF',[['EP-1G-RX',8]]), L('Closet 2','IDF',100,'MMF',[['EP-1G-RX',8]])]),
 ];

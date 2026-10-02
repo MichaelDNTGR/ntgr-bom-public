@@ -41,6 +41,8 @@ node tools/catalog_from_xlsx.js --check   # JSON still matches the workbook (nee
 | V27 | Same, no redundant power | M4250-9G1F-PoE+; router on a free 1G copper port, with a 1G alert | OK |
 | V28 | 9G1F with all copper ports used | Router on 2 × AGM731F 1G modules, with an alert to confirm 1G on the PR460X SFP+ port | OK |
 | V25 | Default demo design, gateway on | Core M4350-24F4V: 23 of 28 ports (8 × 10G DAC main room, 8 × 10G Closet 1, 6 × 10G Closet 2, 1 × 10G router). Core-end optics booked in the core location | OK |
+| V31 | Router link: best available | M4350-8M2V is also the core; its SFP28 ports carry the closets, so the router uses 2.5G copper on it, not a closet switch 100 m away | OK |
+| V32 | Router link: 10G required | M4350-24G4XF becomes the core so a 10G SFP+ port stays free; router on 10G (2 × AXM761) | OK: costs a larger main-room switch |
 | V29 | Dante in two rooms, stream basis | 2 × M4250-9G1F; main-room switch is also the core; closet on 1G SFP (AGM731F); router on 1G copper with alert | OK: 2 switches instead of 3 |
 | V30 | Dante + 1G video, line-rate | 2 × M4250-8G2XF; main-room switch is also the core; closet on 10G SFP+; router on the second SFP+ | OK |
 

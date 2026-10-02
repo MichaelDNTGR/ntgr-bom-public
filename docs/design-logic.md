@@ -207,17 +207,18 @@ Room switches and the core are scored together, because a room's cheapest switch
 flowchart TD
     A["Gateway on"] --> B{"Free 10G port on the core?"}
     B -- Yes --> C["10G SR optic both ends (PR460X takes no DAC)"]
-    B -- No --> D["Room switches: main room first, then nearest closet"]
-    D --> E{"Free 10G copper port<br/>within Copper_10G_Max_m?"}
-    E -- Yes --> F["10G copper, Cat6a"]
-    E -- No --> G{"Free 10G fiber port<br/>with an optic that fits both?"}
-    G -- Yes --> H["10G optic both ends"]
-    G -- No --> I{"Free 1G/2.5G copper port?"}
-    I -- Yes --> J["1G copper, Cat6<br/>alert in Checks"]
-    I -- No --> K{"Free SFP port?"}
-    K -- Yes --> L["AGM731F 1G module both ends<br/>alert: confirm on PR460X"]
-    K -- No --> M["Error: contact ProAV Design"]
+    B -- No --> M{"Router link option"}
+    M -- "Best available in main room (default)" --> D["Main-room switch: 10G copper, 10G fiber,<br/>else 2.5G/1G copper or a 1G module"]
+    D -- "no free port" --> E["Nearest closet: 10G, then slower"]
+    M -- "10G required" --> F["Main-room switch keeps a 10G port free<br/>(a bigger switch if needed)"]
+    F --> G["10G in the main room, else the nearest closet at 10G,<br/>then slower"]
+    E --> X{"Placed?"}
+    G --> X
+    D --> X
+    X -- No --> Z["Error: contact ProAV Design"]
 ```
+
+Slower links get a note: 2.5G is enough for most internet uplinks (the PR460X 2.5G WAN port runs up to 2.4 Gbps), and 1G gets a warning. With "10G required", a collapsed core only qualifies if it still has a free 10G port after every closet link. Otherwise the engine tries the main room's other switch choices on the whole design, or a dedicated core. Example (V31/V32): one Dante device plus two 10G closets uses an M4350-8M2V with the router on 2.5G copper, or with "10G required" an M4350-24G4XF with the router on 10G SFP+.
 
 ### Compatibility (which part fits which switch)
 
