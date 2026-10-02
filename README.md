@@ -6,6 +6,16 @@ The BoM builder turns a list of AV devices per room into a NETGEAR switch design
 
 For the full decision logic with flowcharts, see [How the BoM builder reaches its design](docs/design-logic.md).
 
+```mermaid
+flowchart LR
+    A["Rooms and devices"] --> B["Room switches<br/>ports, PoE, power, timing"]
+    B --> C["Uplinks<br/>speed, LAG size, optic"]
+    C --> D["Core<br/>collapsed or dedicated"]
+    D --> E["Compare whole designs<br/>keep the cheapest"]
+    E --> F["Router placement"]
+    F --> G["BoM, power plan,<br/>diagram, PDF report"]
+```
+
 ## What the user enters
 
 - **Rooms:** one main equipment room (MDF, holds the core) and any number of closets (IDF), each with fiber distance and type (multimode or single mode).
@@ -29,6 +39,7 @@ For the full decision logic with flowcharts, see [How the BoM builder reaches it
 - **The whole design is compared, core included:** slowest uplinks, fewest links and fastest uplinks are each tried, and so are each room's close alternative switches. The cheapest complete design wins, so a room is not moved to 25G when that would force a bigger core.
 - **Parts must fit both ends:** optics and cables are checked against the Compatibility sheet for the room switch and the core, so an M4500-only optic never lands on an M4350. The PR460X gateway takes no DAC, so it gets 10G SR optics.
 - **Timing needs per device type:** `PTP-BC` (boundary clock, e.g. ST 2110) and `AVB` (Milan) limit which switches and cores are used. Devices without a timing need still go on the cheapest switch, for example M4250 for Dante.
+- **Router (PR460X):** on a free 10G port of the core when there is one, otherwise on a room switch: 10G copper (Cat6a, up to 100 m) or 10G fiber, and as a last resort 1G copper or a 1G SFP module, with an alert in Checks.
 - **Redundant core:** each switch has a full-capacity link group to each core switch, so either core can carry all traffic if the other fails. No stacking is used, which keeps AVB and PTP available.
 
 ```
@@ -39,3 +50,8 @@ Example: 16 × 1G encoders + 8 × Dante devices on one switch
 ```
 
 - **Core-to-core link** is sized from total traffic: busiest switch (failover), half of all traffic (default) or all traffic. Example: four closets of 40 Gbps each need 100 Gbps between cores, so 4 × 25G.
+
+## Validation and catalog tools
+
+- [Validation runs](docs/examples/validation/README.md): 30 test designs with the result, verdict and PDF report for each. Rerun with `node tools/validation/run.js` after any catalog or engine change.
+- The Excel catalog is the source: `node tools/catalog_from_xlsx.js` rebuilds `data/catalog.json` from it, and `node tools/build.js` rebuilds `index.html`. See [Editing the catalog](docs/design-logic.md#editing-the-catalog).

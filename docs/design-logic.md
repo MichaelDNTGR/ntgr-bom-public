@@ -6,20 +6,24 @@ This page describes, step by step, how the engine (`src/engine.js`) turns rooms 
 
 ```mermaid
 flowchart TD
-    A["User input: rooms, devices, options"] --> B["1. Build demand per room<br/>ports, PoE, bandwidth"]
+    A["User input: rooms, devices, options"] --> B["1. Demand per room<br/>ports, PoE, bandwidth, timing needs"]
     B --> C{"Only one room has devices?"}
-    C -- Yes --> D["2a. Try one standalone switch<br/>no uplinks, no core"]
+    C -- Yes --> D["Try one standalone switch<br/>no uplinks, no core"]
     D --> E{"Fits on 1 switch?"}
     E -- Yes --> S["Standalone design"]
     E -- No --> F
-    C -- No --> F["2b. Size each room's switches<br/>including uplinks to the core"]
-    F --> G["3. Size the core<br/>terminate every uplink, gateway, core-to-core link"]
-    G --> I["Repeat 2b-3 with slowest, fewest and fastest uplinks<br/>then try each room's close alternatives"]
+    C -- No --> F["2. Choose each room's switches<br/>including uplinks"]
+    F --> G{"3a. Main-room switch has free ports<br/>for every closet link? single core only"}
+    G -- Yes --> CC["Collapsed core<br/>main-room switch is the core"]
+    G -- No --> G2["3b. Choose a dedicated core<br/>uplinks, core-to-core links"]
+    CC --> I
+    G2 --> I["Repeat 2-3 with slowest, fewest and fastest uplinks<br/>then each room's close alternatives"]
     I --> H{"Any complete design?"}
-    H -- Yes --> J["4. Keep the lowest total score, build the BoM<br/>switches, PSUs, optics, cables, support, gateway"]
-    H -- No --> X["Show error: needs aggregation layer<br/>contact ProAV Design"]
-    S --> J
-    J --> K["5. Power plan, checks and diagram"]
+    H -- Yes --> J["4. Keep the lowest total score"]
+    H -- No --> X["Error: no core fits<br/>contact ProAV Design"]
+    S --> R
+    J --> R["5. Place the router<br/>core, else a room switch"]
+    R --> K["6. BoM: optics checked for both ends<br/>power plan, checks, diagram"]
 ```
 
 ## 1. Demand per room
@@ -39,7 +43,9 @@ For each room the engine adds up what the listed devices need. Every device type
 flowchart TD
     A["Room demand"] --> B["Candidate switches<br/>Active, in chosen series, TAA SKU if TAA is on"]
     B --> C["For each candidate, try 1, 2, 3 ... units<br/>devices spread evenly"]
-    C --> P1{"PoE type OK?<br/>PoE++ devices need 802.3bt"}
+    C --> T{"Timing OK?<br/>PTP-BC needs boundary clock, AVB needs AVB"}
+    T -- No --> X["Next candidate"]
+    T -- Yes --> P1{"PoE type OK?<br/>PoE++ devices need 802.3bt"}
     P1 -- No --> N["Try one more unit"]
     P1 -- Yes --> P2{"Enough PoE ports?"}
     P2 -- No --> N
@@ -50,8 +56,11 @@ flowchart TD
     P4 -- Yes --> P5{"A PSU setup covers the PoE budget?<br/>with redundancy if required"}
     P5 -- No --> N
     N --> C
-    P5 -- Yes --> SC["Passes: give it a score"]
-    SC --> R["Lowest score wins<br/>next best 4 shown as Also fits"]
+    P5 -- Yes --> P6{"Uplink optic in the catalog?"}
+    P6 -- Yes --> SC["Passes: give it a score"]
+    P6 -- No --> M["Keep as fallback with placeholder<br/>and try up to 3 more units"]
+    M --> SC
+    SC --> R["Lowest score wins<br/>next best shown as Also fits"]
 ```
 
 ### Port check
@@ -65,18 +74,18 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Switch load = room bandwidth ÷ units ÷ oversubscription"] --> B["Try uplink speeds, slowest first<br/>10G before 25G before 100G"]
-    B --> C["Links needed = ceil(load ÷ speed)"]
-    C --> D{"Redundant core?"}
-    D -- Yes --> E["Per core: smallest LAG of 1, 2, 4, 8 that covers the full load<br/>total = 2 × LAG, one group to each core"]
-    D -- No --> F["Smallest LAG of 1, 2, 4, 8 that covers the load<br/>minimum 2 when dual uplinks is on"]
-    E --> G{"Free uplink ports for that count?"}
-    F --> G
-    G -- No --> B
-    G -- Yes --> H{"Optic in catalog for this speed, fiber type and distance?"}
-    H -- Yes --> OK["Use this uplink"]
-    H -- No --> T["Keep as fallback with TBD optic placeholder<br/>score penalty"]
-    T --> B
+    A["Switch load = room bandwidth ÷ units ÷ oversubscription"] --> A2{"Stream bandwidth?"}
+    A2 -- Yes --> A3["Add Stream_Uplink_Headroom_Pct (50%)"]
+    A2 -- No --> B
+    A3 --> B["Every uplink speed the free ports support<br/>at least Min_Uplink_Gbps"]
+    B --> C["Links needed = ceil(load ÷ speed)<br/>LAG of 1, 2, 4, 8; per core with a redundant core<br/>AVB on M4250: 1 link per core"]
+    C --> G{"Free uplink ports for that count?"}
+    G -- No --> Z["Drop this speed"]
+    G -- Yes --> H{"Optic or cable that fits this switch<br/>for the speed, fiber type and distance?"}
+    H -- Yes --> OK["Candidate"]
+    H -- No --> T["Candidate with placeholder<br/>used only if nothing else fits"]
+    OK --> S["Pick by strategy:<br/>slowest speed, fewest links or fastest speed"]
+    T --> S
 ```
 
 - LAG sizes are powers of two so link aggregation hashing spreads traffic evenly. Sizes come from `Tool_Settings` (`Uplink_LAG_Sizes`, `Max_LAG_Members`).
@@ -133,8 +142,10 @@ If only one room has devices, the engine first tries that room **without uplinks
 
 ```mermaid
 flowchart TD
-    A["All room uplinks, by speed"] --> B["Candidates: active switches with fiber uplink ports<br/>series and TAA filters apply"]
-    B --> C["Ports per core = room uplinks ÷ number of cores<br/>+ 1 × 10G for the gateway"]
+    A["All room uplinks, by speed"] --> CC{"Single core, main room on one switch,<br/>and its free ports take every closet link?"}
+    CC -- Yes --> CO["Collapsed core: that switch is the core<br/>no extra switch, no main-room uplink"]
+    CC -- No --> B["Candidates: active switches with fiber uplink ports<br/>series, TAA and timing filters apply"]
+    B --> C["Ports per core = room uplinks ÷ number of cores<br/>+ 1 × 10G for the router if possible"]
     C --> D{"Ports fit? fastest links placed first"}
     D -- No --> Z["Next candidate"]
     D -- Yes --> E{"Redundant core?"}
@@ -147,6 +158,7 @@ flowchart TD
     P -- No --> Z
     P -- Yes --> W["Penalty for wasted ports<br/>ports that cannot carry any link speed used"]
     W --> S["Score, lowest wins"]
+    Z -. "none fits with the router port" .-> R["Retry without the router port<br/>router goes on a room switch"]
 ```
 
 **Wasted ports.** A core is scored like a room switch, plus 0.5 for every port that cannot carry any link speed the design uses. Example: when every uplink is 10G, the 24 × 1/2.5G SFP ports of the M4350-24F4X are wasted, so the M4350-24F4V (24 × 10G SFP+) wins. When the uplinks run at 1G, for example an audio-only design on stream bandwidth, those ports are usable and the 24F4X can be chosen. A core may be filled completely; there is no spare-port rule for the core.
@@ -188,6 +200,24 @@ Room switches and the core are scored together, because a room's cheapest switch
 | Gateway | PR460X router, on a free 10G port of the core. The PR460X does not take DAC/AOC cables, so that link is a 10G SR optic (AXM761) on both ends, plus a multimode LC patch cord (not in the BoM). If the core has no free 10G port (for example an M4500-32C, 100G only), the router goes on a room switch, main room first, then the nearest closet: a free 10G copper port over Cat6a when the run is within `Copper_10G_Max_m` (100 m), otherwise a free 10G fiber port with optics both ends fit. SFP28 ports next to 25G uplinks are skipped (one speed per 4-port block). If no 10G port is free anywhere, the router link drops to 1G with a warning in Checks: a free 1G/2.5G copper port first (no parts), otherwise a 1G SX module (AGM731F) on both ends in a free SFP port, with a note to confirm the PR460X SFP+ port accepts 1G modules. If no switch has a free port, the design shows a gateway error. |
 | WiFi access points | NETGEAR APs in the device list are added as products. |
 | Support | OnCall support SKU per switch, by support category and years. |
+
+### Router placement
+
+```mermaid
+flowchart TD
+    A["Gateway on"] --> B{"Free 10G port on the core?"}
+    B -- Yes --> C["10G SR optic both ends (PR460X takes no DAC)"]
+    B -- No --> D["Room switches: main room first, then nearest closet"]
+    D --> E{"Free 10G copper port<br/>within Copper_10G_Max_m?"}
+    E -- Yes --> F["10G copper, Cat6a"]
+    E -- No --> G{"Free 10G fiber port<br/>with an optic that fits both?"}
+    G -- Yes --> H["10G optic both ends"]
+    G -- No --> I{"Free 1G/2.5G copper port?"}
+    I -- Yes --> J["1G copper, Cat6<br/>alert in Checks"]
+    I -- No --> K{"Free SFP port?"}
+    K -- Yes --> L["AGM731F 1G module both ends<br/>alert: confirm on PR460X"]
+    K -- No --> M["Error: contact ProAV Design"]
+```
 
 ### Compatibility (which part fits which switch)
 
