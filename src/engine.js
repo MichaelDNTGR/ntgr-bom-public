@@ -19,7 +19,8 @@ function timingOk(p,D){ return (!D.needBC||hasBC(p)) && (!D.needAVB||hasAVB(p));
 // relative cost of one uplink (two optics plus a fiber pair) when the catalog has no prices
 const linkCost = s => 0.4 + s/40;
 const CORE_PORT = 3; // "fastest uplinks" strategy: each uplink also uses a core port, so fewer, faster links win
-const TBD_PENALTY = 40; // a part missing from the catalog makes the design unorderable: worth more than an extra switch
+const TBD_PENALTY = 40;
+const PREF_MISS = 30; // preferred uplink speed not used: a switch that can run it wins unless it costs much more // a part missing from the catalog makes the design unorderable: worth more than an extra switch
 function candidates(cat,S,role){
   return cat.Products.filter(p=>p.Category==='Switch' && (p.Lifecycle_Status||'Active')==='Active'
     && (!S.taa || isTAA(p)) && (S.family==='Auto' || p.Family===S.family));
@@ -117,6 +118,8 @@ function evalN(cat,PT,p,D,n,S,ctx){
     // strategy: slowest speed that fits (low), fewest links (fewest) or fastest speed (fast); speeds with a catalog optic first
     const order={low:(a,b)=>a.speed-b.speed, fast:(a,b)=>b.speed-a.speed, fewest:(a,b)=>a.u-b.u||a.speed-b.speed}[S.upPref]||((a,b)=>a.speed-b.speed);
     fits.sort((a,b)=>(a.tbd?1:0)-(b.tbd?1:0)||order(a,b));
+    // preferred uplink speed (Design options): use it whenever the ports allow, even if the catalog has no optic for the distance
+    const pref=N(S.upSpeed)&&fits.find(f=>f.speed===N(S.upSpeed)); if(pref){ fits.splice(fits.indexOf(pref),1); fits.unshift(pref); if(pref.tbd) pref.pref=true; }
     up=fits[0]; if(!up) return null; if(!up.tbd) delete up.tbd;
   }
   const free={...rem}; if(up.u){ let q=up.u; for(const t of PT.filter(t=>t.up&&supports(t,up.speed))){ const k=Math.min(q,free[t.col]||0); free[t.col]-=k; q-=k; } }
@@ -124,7 +127,7 @@ function evalN(cat,PT,p,D,n,S,ctx){
   const psu=psuPick(cat,p,needW,S); if(!psu) return null;
   // RJ45 SFP modules are a fallback: a switch with native copper ports should win whenever one fits
   const modCost=Object.values(A.mods).reduce((a,b)=>a+b,0)*4;
-  return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?TBD_PENALTY:0)+up.u*(linkCost(up.speed)+(S.upPref==='fast'?CORE_PORT:0)))};
+  return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?(up.pref?2:TBD_PENALTY):0)+(N(S.upSpeed)&&up.u&&up.speed!==N(S.upSpeed)?PREF_MISS:0)+up.u*(linkCost(up.speed)+(S.upPref==='fast'?CORE_PORT:0)))};
 }
 // Neutrik etherCON switches (e.g. M4350-16M4V) only when the room asks for them; a Neutrik room only gets them
 const isNeutrik=p=>N(p.Neutrik_etherCON_Ports)>0;
@@ -231,6 +234,14 @@ function solveCore(cat,PT,dem,S,forced){
   }
   return best||(psuFail?{fail:'psu'}:null);
 }
+// module types that reach further than the catalog parts; these must come from a third party and be confirmed with NETGEAR
+function thirdParty(speed,media,dist){
+  if(media==='MMF'){ const er={25:['25GBASE-eSR (SR extended reach)',300],100:['100GBASE-eSR4 or SWDM4',300],40:['40GBASE-eSR4',400],10:['10GBASE-SR',400]}[speed];
+    if(er&&dist<=er[1]) return `third-party ${er[0]} module, up to ${er[1]} m on OM4 (not in the NETGEAR catalog; confirm compatibility)`;
+    return `beyond multimode reach at ${speed}G; use single-mode fiber (${speed}G LR) or a third-party module`; }
+  if(media==='SMF') return `third-party ${speed}G ER/ZR module for ${dist} m (not in the NETGEAR catalog; confirm compatibility)`;
+  return 'not in the NETGEAR catalog';
+}
 function pickLink(cat,speed,media,dist,inRack,ends){
   const A=cat.Accessories.filter(a=>fitsEnds(cat,a,ends));
   // NETGEAR-branded parts before third-party (optic.ca, -OC) when both fit
@@ -245,7 +256,7 @@ function pickLink(cat,speed,media,dist,inRack,ends){
     // LRM and PSM4 (8-fiber MPO trunk) only when nothing else reaches
     .sort((a,b)=>(/LRM|PSM4/.test(a.Description)?1:0)-(/LRM|PSM4/.test(b.Description)?1:0) || N(a.Reach_m)-N(b.Reach_m) || brand(a,b));
   if(o.length) return {sku:o[0].Orderable_SKU,desc:o[0].Description,perLink:2,cat:'Optics'};
-  return {sku:`TBD-${speed}G-${media}`,desc:`${speed}G ${media} transceiver, ${dist} m (not in catalog)`,perLink:2,cat:'Optics',tbd:true};
+  return {sku:`TBD-${speed}G-${media}`,desc:`${speed}G ${media} transceiver, ${dist} m: ${thirdParty(speed,media,dist)}`,perLink:2,cat:'Optics',tbd:true};
 }
 const REG={Americas:['Americas','North America','US'],Europe:['Europe','Americas / Europe'],APAC:['Asia Pacific','Other APAC','Australia','Japan'],China:['China']};
 function regionSku(cat,pid,S){
@@ -414,7 +425,8 @@ function designOnce(cat,state,upPref){
     else add(lk.sku,lk.desc,q*lk.perLink,lk.cat,L.name,lk.tbd?'Not in catalog yet':(lk.perLink===2?'2 per link (both ends)':'1 per link'));
     if(core&&core.p) corePorts.push({loc:L.name,speed:b.up.speed,perCore:q/(core.k||1),sku:lk.sku,kind:lk.perLink===2?'optic':'cable'});
     if(lk.tbd){ const reach=Math.max(0,...cat.Accessories.filter(a=>a.Category==='Optic'&&N(a.Speed_Gbps)===b.up.speed&&String(a.Media)===ctx.media).map(a=>N(a.Reach_m)));
-      notes.push({lvl:'warn',msg:`${L.name}: no ${b.up.speed}G ${ctx.inRack?'cable':'optic'} in the catalog for ${ctx.dist} m`+(core&&core.p?` that fits both the ${p.Model_Name} and the ${core.p.Model_Name}`:'')+'. Placeholder added.'+(!ctx.inRack&&reach?` ${b.up.speed}G ${ctx.media} optics reach ${reach} m; use single-mode fiber (SMF) for this room or a shorter run.`:'')}); }
+      if(b.up.pref) notes.push({lvl:'warn',msg:`${L.name}: ${b.up.speed}G was chosen as the uplink speed, but no NETGEAR or validated optic.ca module reaches ${ctx.dist} m on ${ctx.media}. The BoM lists a placeholder: ${thirdParty(b.up.speed,ctx.media,ctx.dist)}.`});
+      else notes.push({lvl:'warn',msg:`${L.name}: no ${b.up.speed}G ${ctx.inRack?'cable':'optic'} in the catalog for ${ctx.dist} m`+(core&&core.p?` that fits both the ${p.Model_Name} and the ${core.p.Model_Name}`:'')+'. Placeholder added.'+(!ctx.inRack&&reach?` ${b.up.speed}G ${ctx.media} optics reach ${reach} m; use single-mode fiber (SMF) for this room or a shorter run.`:'')}); }
     links.push({loc:L.name,model:p.Model_Name,n:b.n,speed:b.up.speed,u:b.up.u,optic:lk.sku,dist:ctx.dist,media:inRack?'in-rack':(card?ctx.media+' opticalCON':ctx.media)});
   }
   if(S.gateway && units>0){ const gw=cat.Products.find(p=>p.Product_ID===gwId);
@@ -459,6 +471,8 @@ function designOnce(cat,state,upPref){
       power.push({loc:mdfName,model:gw.Model_Name,n:1,poe:0,cfg:'Internal PSU',eps:null,prot:null,budget:null,head:null,est:156,max:156,ru:N(gw.Rack_Units)||1,half:false}); } }
   if(coreDem.needBC||locs.some(L=>L.items.some(i=>i.ep.Timing==='PTP-BC'&&N(i.qty)))) notes.push({lvl:'info',msg:'Some devices need a PTP boundary clock (e.g. SMPTE 2059-2 / AES67), so only switches with PTP boundary clock were used for them and for the core.'});
   if(locs.some(L=>L.items.some(i=>i.ep.Timing==='AVB'&&N(i.qty)))) notes.push({lvl:'info',msg:'AVB / Milan devices: only AVB-capable switches were used. M4250 does not run AVB over a LAG, so M4250 switches with AVB devices get one uplink per core.'});
+  if(N(S.upSpeed)){ const miss=[...new Set(links.filter(l=>l.speed!==N(S.upSpeed)).map(l=>l.loc))];
+    if(miss.length) notes.push({lvl:'info',msg:`Preferred uplink speed ${S.upSpeed}G could not be used for ${miss.join(', ')}: the switch has no free ${S.upSpeed}G port, or ${S.upSpeed}G cannot carry the load within ${S.maxLag} links. The best automatic speed was used there.`}); }
   if(supIncl.size) notes.push({lvl:'info',msg:`Sprint ${supYrs} yr: ${[...supIncl].join(', ')} already include${supIncl.size>1?'':'s'} 3 years of Sprint, so no support SKU is added for ${supIncl.size>1?'them':'it'}.`});
   if(supMiss.size) notes.push({lvl:'warn',msg:`${TIERS[supTier]} is not listed for ${[...supMiss].join(', ')}, so no support SKU was added for ${supMiss.size>1?'them':'it'}. Choose another tier or check availability with NETGEAR.`});
   if(supTier) notes.push({lvl:'info',msg:'Support SKUs follow the NETGEAR pattern (SPR / DRV / FLS - model - months). Confirm each SKU and its price with NETGEAR or your distributor.'});

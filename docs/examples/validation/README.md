@@ -43,6 +43,7 @@ node tools/catalog_from_xlsx.js --check   # JSON still matches the workbook (nee
 | V25 | Default demo design, gateway on | Core M4350-24F4V: 23 of 28 ports (8 × 10G DAC main room, 8 × 10G Closet 1, 6 × 10G Closet 2, 1 × 10G router). Core-end optics booked in the core location | OK |
 | V35 | Neutrik stage rack | Stage: M4350-16M4V (Neutrik, 1+1 PSU), opticalCON QUAD selected: APM414SD card; standard closet keeps an M4350-24G4XF | OK |
 | V38 | Neutrik stage rack, default card | M4350-16M4V keeps its APM414V (SFP28, LC); no opticalCON card | OK |
+| V39 | Prefer 25G, one closet at 150 m MMF | M4350-24X4V closets on 1 × 25G; Closet 2 NGS25G-LR-OC; Closet 1 placeholder for a third-party 25GBASE-eSR module | OK |
 | V36 | Four 200G closets, single core | M4350-16V4C core filled completely (2 × 100G + 2 × 25G closets) | OK; no spare core ports |
 | V37 | ST 2110-30 audio + Dante | One M4350-24M4X4V (boundary clock), standalone | OK |
 | V33 | Overdrive 3 years | One DRV-<model>-36 per switch, access point and router | OK |

@@ -122,4 +122,7 @@ module.exports = [
   S('V38','Neutrik stage rack, standard uplink card',
     'Same stage set to Neutrik, uplink card left at the default: the M4350-16M4V keeps its APM414V (SFP28, LC), no opticalCON card in the BoM.',
     {gateway:true, psuRed:true, spare:10}, [MDF([['EP-DANTE',4]]), {...L('Stage','IDF',80,'MMF',[['EP-DANTE',8],['EP-PTZ',4]]), conn:'neutrik'}, L('Closet 1','IDF',100,'MMF',[['EP-1G-RX',8]])]),
+  S('V39','Prefer 25G, one closet beyond multimode reach',
+    'Uplink speed "Prefer 25G": closets move to 25G-capable switches. Closet 2 (600 m SMF) gets the optic.ca 25G LR; Closet 1 (150 m MMF) gets a placeholder naming a third-party 25GBASE-eSR module (300 m on OM4), with a warning.',
+    {spare:0, upSpeed:'25'}, [MDF(), L('Closet 1','IDF',150,'MMF',[['EP-1G-TX',10]]), L('Closet 2','IDF',600,'SMF',[['EP-1G-TX',15]])]),
 ];

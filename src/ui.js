@@ -6,7 +6,7 @@ const BUILTIN=JSON.parse(document.getElementById('catalog').textContent);
 let CAT=BUILTIN, CATMETA={version:ENG.settings(BUILTIN).Catalog_Version,source:'Built-in catalog',publishedAt:null};
 const SET=()=>ENG.settings(CAT);
 const nid=()=>'L'+Math.random().toString(36).slice(2,8);
-const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all',gwLink:'best'},
+const DEFAULT=()=>{ const T=SET(); return {project:{name:'',region:'Americas',taa:false,psuRed:true,dualUplink:true,dualCore:true,basis:'line',oversub:+T.Default_Oversubscription||1,spare:+T.Default_Spare_Pct||10,poeHead:+T.Default_PoE_Headroom_Pct||20,voltage:110,gateway:true,support:'',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all',gwLink:'best',upSpeed:''},
   endpoints:CAT.Endpoints.map(e=>({...e})),
   locations:[{id:nid(),name:'Main equipment room',type:'MDF',distance:3,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-TX',qty:16},{ep:'EP-10G-TX',qty:4},{ep:'EP-DANTE',qty:8}]},
     {id:nid(),name:'Closet 1',type:'IDF',distance:150,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:24},{ep:'EP-PTZ',qty:4},{ep:'EP-WBE758',qty:4}]},
@@ -68,6 +68,7 @@ function renderInputs(){
       <label class="fld"><span>Uplink oversubscription</span>${sel('oversub',[[1,'1:1 non-blocking'],[2,'2:1'],[3,'3:1'],[4,'4:1']])}</label>
       ${num('spare','Spare ports','%',0,100)}${num('poeHead','PoE headroom','%',0,100)}
       ${num('mdfPatch','Patch length in main room','m',1,20)}
+      <label class="fld"><span>Uplink speed</span>${sel('upSpeed',[['','Automatic (lowest cost)'],['10','Prefer 10G'],['25','Prefer 25G'],['100','Prefer 100G']])}</label>
       <label class="fld"><span>Core-to-core link sizing</span>${sel('islRule',[['failover','Busiest switch (failover)'],['half','Half of all traffic'],['full','All traffic (non-blocking)']])}</label>
       ${P.gateway?`<label class="fld"><span>Router link</span>${sel('gwLink',[['best','Best available in main room'],['10g','10G required']])}</label>`:''}
       <label class="fld"><span>Support contract</span>${supportSel()}</label>
