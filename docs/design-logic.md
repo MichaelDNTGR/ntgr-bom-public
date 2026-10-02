@@ -135,7 +135,7 @@ When no NETGEAR or validated optic.ca module reaches the distance at a speed, bu
 
 ### Brand
 
-Every BoM line shows its brand: NETGEAR for products, the `Brand` column for accessories (NETGEAR, optic.ca, or a future supplier), and "Third party" for `3P-` modules.
+Every BoM line shows its brand: NETGEAR for products, the `Brand` column for accessories (NETGEAR, optic.ca, or a future supplier), and "Third party" for `3P-` modules. The BoM is grouped by brand, in the app, PDF, CSV, Excel and design summary: NETGEAR first, then other suppliers such as optic.ca (alphabetically), then third-party parts, then anything still to be confirmed. Each group has a buying note (for example "Order from optic.ca" or "Buy separately and confirm compatibility"), and within a group the usual categories apply.
 
 ### Scoring: "best fit"
 

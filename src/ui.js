@@ -163,8 +163,14 @@ let resetArmed=0; function confirmReset(){ if(Date.now()-resetArmed<4000) return
 
 // ---------- results ----------
 const CATORDER=['Switches','Power','Optics','Cabling','Wireless','Gateway','Support'];
+// BoM grouped by brand: NETGEAR first, then other suppliers (e.g. optic.ca) alphabetically, then third-party parts, then placeholders
+const brandKey=r=>r.brand||'To be confirmed';
+const brandRank=b=>b==='NETGEAR'?0:(b==='Third party'?2:(b==='To be confirmed'?3:1));
+const BRAND_NOTE={'NETGEAR':'','optic.ca':'NETGEAR-certified modules and cables (KB 000066694). Order from optic.ca.','Third party':'Not in the NETGEAR catalog: buy separately and confirm compatibility with the ProAV Design team.','To be confirmed':'Not in the catalog yet: the ProAV Design team will confirm the part.'};
+const brandNote=b=>BRAND_NOTE[b]!==undefined?BRAND_NOTE[b]:'Third-party supplier: order from the supplier and confirm compatibility.';
 function rollup(){ const m={}; for(const b of result.bom){ if(!m[b.sku]) m[b.sku]={...b,locs:new Set()}; else m[b.sku].qty+=b.qty; m[b.sku].locs.add(b.loc); }
-  return Object.values(m).sort((a,b)=>CATORDER.indexOf(a.cat)-CATORDER.indexOf(b.cat)||a.sku.localeCompare(b.sku)); }
+  return Object.values(m).sort((a,b)=>brandRank(brandKey(a))-brandRank(brandKey(b))||brandKey(a).localeCompare(brandKey(b))||CATORDER.indexOf(a.cat)-CATORDER.indexOf(b.cat)||a.sku.localeCompare(b.sku)); }
+const brandsOf=rows=>[...new Set(rows.map(brandKey))];
 function roomPower(l){ const V=state.project.voltage, r=result.power.filter(p=>p.loc===l); const w=r.reduce((s,p)=>s+p.est*p.n,0), mx=r.reduce((s,p)=>s+p.max*p.n,0), ru=r.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0);
   const amps=w/V, cA=V>=200?16:20; return {w,mx,ru,amps,cA,circ:Math.max(1,Math.ceil(amps/(cA*0.8))),btu:w*3.412,va:w/0.9}; }
 function stats(){ return {sw:result.bom.filter(b=>b.cat==='Switches').reduce((s,b)=>s+b.qty,0),eps:result.totalEps,poe:result.power.reduce((s,p)=>s+p.poe*p.n,0),est:result.power.reduce((s,p)=>s+p.est*p.n,0),ru:result.power.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0)}; }
@@ -179,7 +185,9 @@ function renderResults(){
   if(tab==='diagram') out.innerHTML=errs()+`<div class="scroll">${diagram(false)}</div><p class="cap">Green lines are uplinks, labelled with link count, speed and the optic or cable used. With a redundant core, every switch has its own full-capacity link group to each core, so either core can carry all traffic alone.</p>`;
   if(tab==='bom'){ const rows=rollup();
     out.innerHTML=errs()+`<div class="scroll"><table class="t"><thead><tr><th>Part number</th><th>Brand</th><th>Description</th><th class="r">Qty</th><th>Where</th>${team()?'<th>Notes</th>':''}</tr></thead><tbody>${
-      CATORDER.filter(c=>rows.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${team()?6:5}">${c}</td></tr>`+rows.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.brand||'')}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join('')}</tbody></table></div>
+      brandsOf(rows).map(br=>{ const br_=rows.filter(r=>brandKey(r)===br), nc=team()?6:5;
+        return `<tr class="brand"><td colspan="${nc}">${esc(br)}${brandNote(br)?`<small>${esc(brandNote(br))}</small>`:''}</td></tr>`+
+      CATORDER.filter(c=>br_.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${nc}">${c}</td></tr>`+br_.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.brand||'')}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join(''); }).join('')}</tbody></table></div>
       <p class="cap">Part numbers are for ${esc(state.project.region)}${state.project.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.</p>`; }
   if(tab==='power'){ const P=state.project, locs=[...new Set(result.power.map(p=>p.loc))], eff=+T.PSU_Efficiency||0.9;
     out.innerHTML=`<div class="closets">${locs.map(l=>{ const r=roomPower(l);
@@ -329,7 +337,7 @@ function summaryText(meta){ const P=state.project, s=stats(), L=[];
       line(`     Switch total ${fmt(un.bw,1)} Gbps; uplink ${n.up.u?(dc?`${n.up.u/2} x ${n.up.speed}G to each core`:`${n.up.u} x ${n.up.speed}G`):'none (standalone)'}`); }));
     line(); });
   if(result.core){ line(`CORE: ${result.core.k} x ${result.core.p.Model_Name} (${result.core.psu.label})${result.core.isl?`; core-to-core ${result.core.isl} x ${result.core.islSpeed}G, needs ${Math.round(result.core.islReq)} Gbps`:''}`); line(); }
-  line('BILL OF MATERIALS'); rollup().forEach(r=>line(`  ${String(r.qty).padStart(4)}  ${r.sku.padEnd(20)} ${r.desc}`)); line();
+  line('BILL OF MATERIALS'); let lastBr=null; rollup().forEach(r=>{ const br=brandKey(r); if(br!==lastBr){ line(`  ${br}${brandNote(br)?': '+brandNote(br):''}`); lastBr=br; } line(`  ${String(r.qty).padStart(4)}  ${r.sku.padEnd(20)} ${r.desc}`); }); line();
   if(result.errors.length||result.notes.length){ line('CHECKS'); result.errors.forEach(x=>line(`  ! ${x.loc}: ${x.msg}`)); result.notes.forEach(n=>line(`  ${n.lvl==='warn'?'!':'-'} ${n.msg}`)); line(); }
   if(meta.notes){ line('NOTES FROM REQUESTER'); line(meta.notes); line(); }
   if(ATT.length){ line('ATTACHMENTS'); ATT.forEach(f=>line(`  ${f.name}`)); }
@@ -685,8 +693,11 @@ async function buildPdf(v={}){
 
   // --- bill of materials ---
   doc.addPage(fmtName,'portrait'); y=M+16; h2('Bill of materials');
-  const R=rollup(), bom=[]; CATORDER.filter(c=>R.some(r=>r.cat===c)).forEach(c=>{ bom.push([{content:c.toUpperCase(),colSpan:5,styles:{fontStyle:'bold',fontSize:7.5,textColor:AVD,fillColor:G1}}]);
-    R.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.brand||'',r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); });
+  const R=rollup(), bom=[];
+  brandsOf(R).forEach(br=>{ const RB=R.filter(r=>brandKey(r)===br);
+    bom.push([{content:br+(brandNote(br)?`   ${brandNote(br)}`:''),colSpan:5,styles:{fontStyle:'bold',fontSize:9,textColor:INK,fillColor:G3}}]);
+    CATORDER.filter(c=>RB.some(r=>r.cat===c)).forEach(c=>{ bom.push([{content:c.toUpperCase(),colSpan:5,styles:{fontStyle:'bold',fontSize:7.5,textColor:AVD,fillColor:G1}}]);
+      RB.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.brand||'',r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); }); });
   y=at({startY:y,head:[['Part number','Brand','Description','Qty','Where']],body:bom,columnStyles:{0:{cellWidth:96,fontStyle:'bold'},1:{cellWidth:52},3:{halign:'right',cellWidth:30},4:{cellWidth:104,textColor:MUT}},
     didParseCell:d=>{ if(d.section==='head'&&d.column.index===3) d.cell.styles.halign='right'; }})+12;
   para(`Part numbers are for ${P.region}${P.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.`);
