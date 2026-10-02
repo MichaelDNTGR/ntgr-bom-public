@@ -4,16 +4,20 @@
 
 The BoM builder turns a list of AV devices per room into a NETGEAR switch design: switches, uplinks, core, power supplies, optics, a bill of materials, a network diagram and a power plan. It is a budgetary estimate; **advised sending the design to the ProAV Design team for further validation**.
 
-For the full decision logic with flowcharts, see [How the BoM builder reaches its design](docs/design-logic.md).
+For the full decision logic with flowcharts, see [How the BoM builder reaches its design](docs/design-logic.md), and [Decision making](docs/design-logic.md#decision-making-from-all-possible-designs-to-the-one-shown) for how the final design is picked.
 
 ```mermaid
 flowchart LR
     A["Rooms and devices"] --> B["Room switches<br/>ports, PoE, power, timing"]
     B --> C["Uplinks<br/>speed, LAG size, optic"]
     C --> D["Core<br/>collapsed or dedicated"]
-    D --> E["Compare whole designs<br/>keep the best design<br/>(cost as a safety net)"]
-    E --> F["Router placement"]
-    F --> G["BoM, power plan,<br/>diagram, PDF report"]
+    D --> E["Candidate designs<br/>4 uplink strategies,<br/>room alternatives"]
+    E --> X{"Long run beyond<br/>catalog optics?"}
+    X -- "yes" --> Y["3P module<br/>(buy separately)"]
+    X -- "no" --> Z
+    Y --> Z["Best design:<br/>fewest switches and uplinks,<br/>cost as a 30% safety net"]
+    Z --> F["Router placement"]
+    F --> G["BoM by brand, power plan,<br/>diagram, PDF report"]
 ```
 
 ## What the user enters

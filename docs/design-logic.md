@@ -17,14 +17,52 @@ flowchart TD
     G -- Yes --> CC["Collapsed core<br/>main-room switch is the core"]
     G -- No --> G2["3b. Choose a dedicated core<br/>uplinks, core-to-core links"]
     CC --> I
-    G2 --> I["Repeat 2-3 with slowest, fewest and fastest uplinks<br/>then each room's close alternatives"]
+    G2 --> I["Repeat 2-3 with four uplink strategies<br/>then each room's close alternatives"]
     I --> H{"Any complete design?"}
-    H -- Yes --> J["4. Keep the best design: fewest switches and uplinks<br/>unless it costs over 30% more than the cheapest"]
+    H -- Yes --> J["4. Pick the final design<br/>see Decision making below"]
     H -- No --> X["Error: no core fits<br/>contact ProAV Design"]
     S --> R
     J --> R["5. Place the router<br/>core, else a room switch"]
     R --> K["6. BoM: optics checked for both ends<br/>power plan, checks, diagram"]
 ```
+
+## Decision making: from all possible designs to the one shown
+
+```mermaid
+flowchart TD
+    A["Rooms, devices and options"] --> HR["Hard rules, never relaxed<br/>ports and speeds, PoE class and budget,<br/>power supplies and redundancy, timing (PTP BC, AVB),<br/>Neutrik rooms, distances, optic compatibility both ends"]
+    HR --> G["Build complete candidate designs<br/>4 uplink strategies: slowest, fewest links, fastest, cheapest links<br/>plus each room's 3 closest alternative switches"]
+    G --> O{"For each long run: a catalog optic<br/>(NETGEAR or optic.ca) reaches it?"}
+    O -- Yes --> V["Valid candidate"]
+    O -- No --> T{"A third-party module type reaches it?<br/>eSR up to 300 m MMF, ER/ZR on SMF"}
+    T -- Yes --> V3["Valid candidate with a 3P- module<br/>buy separately, warning in Checks"]
+    T -- No --> P["Placeholder: avoided unless nothing else fits<br/>advice: single-mode fiber or a shorter run"]
+    V --> PR
+    V3 --> PR
+    P --> PR{"Design priority"}
+    PR -- "Best design<br/>(default, customers)" --> B["Rank: fewest switches, then fewest uplinks<br/>and fiber pairs; catalog optics before 3P modules"]
+    PR -- "Lowest cost<br/>(internal, team mode)" --> L["Rank: lowest total cost<br/>switches, PSUs, optics, cables, overhead"]
+    B --> M{"Best design costs more than<br/>30% above the cheapest valid design?"}
+    M -- No --> KB["Keep the best design<br/>Checks: switches saved and extra cost"]
+    M -- Yes --> KC["Show the lower-cost design<br/>Checks: a simpler design exists"]
+    L --> KL["Keep the lowest-cost design"]
+    KB --> RT["Place the router: core, else main room, else nearest closet"]
+    KC --> RT
+    KL --> RT
+    RT --> BOM["BoM grouped by brand: NETGEAR, optic.ca, Third party<br/>diagram, power plan, Checks, PDF"]
+```
+
+What decides between two valid designs, in order:
+
+| Step | Best design (default) | Lowest cost (internal) |
+|---|---|---|
+| 1 | Fewest switches | Lowest total cost |
+| 2 | Fewest uplinks and fiber pairs | |
+| 3 | Catalog optics before third-party modules | Catalog optics before third-party modules |
+| 4 | Lowest cost as a tie-breaker | |
+| Safety net | If it costs more than `Best_Design_Cost_Margin_Pct` (30%) above the cheapest, the cheaper design is shown | none |
+
+Customers always get Best design; Lowest cost is only visible to NETGEAR in team mode. The weights behind steps 1 and 2 are listed in the internal admin notes.
 
 ## 1. Demand per room
 
