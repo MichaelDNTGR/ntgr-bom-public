@@ -114,7 +114,7 @@ Each device type can carry a `Timing` value in the Endpoints sheet:
 | Timing | Rule |
 |---|---|
 | blank | Any switch. Every model supports PTPv2 transparent clock, which is enough for Dante. |
-| `PTP-BC` | The device's switch and the core must have a PTP boundary clock (M4350-8M2V, 24M4X4V, 24F4X, 16V4C, 40X4C, 40F4C). Used for ST 2110 (SMPTE 2059-2). |
+| `PTP-BC` | The device's switch and the core must have a PTP boundary clock (M4350-8M2V, 16M4V, 24M4X4V, 24F4X, 16V4C, 40X4C, 40F4C, 16C). Used for ST 2110 video and ST 2110-30 / AES67 audio (SMPTE 2059-2). |
 | `AVB` | The switch must support AVB. M4250 does not run AVB over a LAG, so an M4250 with AVB devices gets one uplink per core. A room that needs more than one link moves to M4350 or more M4250 units. |
 
 Devices without a timing need still go to the cheapest switch: in a mixed room, a split puts them on M4250 while the timing devices get an M4350.
@@ -129,6 +129,12 @@ Devices without a timing need still go to the cheapest switch: in a mixed room, 
   plus 4 per copper RJ45 module, 0.4 + speed ÷ 40 per uplink (two optics and a fiber pair), and 40 if an uplink optic is not in the catalog. The total is multiplied by the number of units.
 
 This favors the smallest switch that passes all checks, and M4250 over M4350 when both fit.
+
+### Neutrik etherCON rooms
+
+Each room has a **Connectors** setting: Standard RJ45 (default) or Neutrik etherCON. Switches with Neutrik ports (today the M4350-16M4V: 8 etherCON front, 8 RJ45 rear, 16 × 2.5G PoE++, 1+1 internal PSUs) are only used in Neutrik rooms, and a Neutrik room only gets Neutrik switches. They are never used as a dedicated core. If a Neutrik room is too large for one model, the room shows an error suggesting a split or Standard RJ45.
+
+The 16M4V's interface card slot is modelled with the card it ships with (APM414V, 4 × SFP28 10G/25G). The other cards (APM414C 4 × 10GBASE-T, APM414SD/LD opticalCON QUAD for multimode or single mode) are in the catalog but not yet chosen by the tool.
 
 ### Mixed rooms
 
@@ -272,6 +278,8 @@ node tools/validation/run.js              # check the validation scenarios
 ## Known limits
 
 - No list prices in the catalog yet, so "best fit" means the smallest design that passes, not the cheapest. The scores for switches, cores and links are estimates; adding `List_Price_USD` to Products (and prices for optics) makes every comparison above a real cost comparison.
+- M4350-16M4V interface cards other than the shipping APM414V are not chosen by the tool yet.
+- On the M4350, AVB uses only one link of a LAG (the others are backup); the engine still sizes AVB uplinks on the LAG total.
 - QSFP28 breakout (4 × 25G / 4 × 10G) is not used yet. A core that must take many 100G links plus some 10G/25G links (for example 12 × 100G and one 10G closet) has no fit today; the engine shows an error.
 - M4500 is not used for devices that need AVB or a PTP boundary clock (its datasheet lists neither), and Fastlane is not listed for it (Sprint and Overdrive are).
 - With a redundant core, one 10G port for the gateway is reserved on each core, but the BoM includes one gateway cable.

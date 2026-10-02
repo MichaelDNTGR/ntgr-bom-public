@@ -34,13 +34,16 @@ node tools/catalog_from_xlsx.js --check   # JSON still matches the workbook (nee
 | V19 | Ten 200G closets, single core | M4350-40X4C, 2 × 100G (optic.ca SR4, since ACM761 is M4500 only); M4500-32C core | OK |
 | V20 | PR460X gateway, M4350 core | Router link: 2 × AXM761 + LC patch cord note, no DAC | OK |
 | V21 | PR460X gateway, M4500 core | Same AXM761 link; 2 × M4500-48XF8C core | OK |
-| V22 | Two rooms of 20 × 25G fiber | M4500-48XF8C, 8 × 100G (ACM761); M4500-32C core | OK |
+| V22 | Two rooms of 20 × 25G fiber | M4500-48XF8C, 8 × 100G (optic.ca SR4); M4350-16C core | OK |
 | V23 | 12 × 100G plus a 10G closet | No core fits | Known gap: needs QSFP28 breakout on the core |
-| V24 | 100G closets with gateway | M4350-40X4C, 4 × 100G; M4500-32C core. PR460X on a free 10G copper port of the Closet 1 switch (Cat6a, 100 m) | OK: the core has no 10G port, so the router goes on a closet switch |
+| V24 | 100G closets with gateway | M4350-40X4C, 4 × 100G; M4350-16C core. PR460X on a free 10G copper port of the Closet 1 switch (Cat6a, 100 m) | OK: the core has no 10G port, so the router goes on a closet switch |
 | V26 | 8 Dante, one switch, redundant power | M4350-8M2V (M4250 10-port models have one fixed PSU); router on its 10G fiber port | OK |
 | V27 | Same, no redundant power | M4250-9G1F-PoE+; router on a free 1G copper port, with a 1G alert | OK |
 | V28 | 9G1F with all copper ports used | Router on 2 × AGM731F 1G modules, with an alert to confirm 1G on the PR460X SFP+ port | OK |
 | V25 | Default demo design, gateway on | Core M4350-24F4V: 23 of 28 ports (8 × 10G DAC main room, 8 × 10G Closet 1, 6 × 10G Closet 2, 1 × 10G router). Core-end optics booked in the core location | OK |
+| V35 | Neutrik stage rack | Stage: M4350-16M4V (Neutrik, 1+1 PSU), 25G uplink; standard closet keeps an M4350-24G4XF | OK |
+| V36 | Four 200G closets, single core | M4350-16V4C core filled completely (2 × 100G + 2 × 25G closets) | OK; no spare core ports |
+| V37 | ST 2110-30 audio + Dante | One M4350-24M4X4V (boundary clock), standalone | OK |
 | V33 | Overdrive 3 years | One DRV-<model>-36 per switch, access point and router | OK |
 | V34 | Fastlane on an M4500 design | FLS SKUs for the M4350 closets; warning and no SKU for the M4500 cores | OK |
 | V31 | Router link: best available | M4350-8M2V is also the core; its SFP28 ports carry the closets, so the router uses 2.5G copper on it, not a closet switch 100 m away | OK |

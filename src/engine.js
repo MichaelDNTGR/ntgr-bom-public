@@ -126,8 +126,10 @@ function evalN(cat,PT,p,D,n,S,ctx){
   const modCost=Object.values(A.mods).reduce((a,b)=>a+b,0)*4;
   return {p,n,up,psu,mods:A.mods,free,pre:{...rem},poeLoadUnit:D.poeW/n,needW,score:n*(scoreUnit(p,psu)+modCost+(up.tbd?TBD_PENALTY:0)+up.u*(linkCost(up.speed)+(S.upPref==='fast'?CORE_PORT:0)))};
 }
+// Neutrik etherCON switches (e.g. M4350-16M4V) only when the room asks for them; a Neutrik room only gets them
+const isNeutrik=p=>N(p.Neutrik_etherCON_Ports)>0;
 function bestFor(cat,PT,D,S,ctx,forced){
-  const list=forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'access');
+  const list=forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'access').filter(p=>isNeutrik(p)===!!ctx.neutrik);
   let best=null; const alts=[];
   const keep=r=>{ alts.push(r); if(!best||r.score<best.score) best=r; };
   for(const p of list){ let tbd=null;
@@ -170,7 +172,7 @@ function solveLocation(cat,PT,items,S,ctx,forced){
       for(const x of part){ const r=bestFor(cat,PT,demandOf(x,S),S,ctx); if(!r){ok=false;break;} gs.push({label:x.map(poolKey).filter((v,i,a)=>a.indexOf(v)===i).join(' + '),items:x,...r}); sc+=r.best.score; }
       if(ok) opts.push({groups:gs,score:sc}); }
   }
-  if(!opts.length) return {groups:[],err:forced?`The selected switch cannot serve this endpoint mix with the current settings.`:noFitMsg(S,nz)};
+  if(!opts.length) return {groups:[],err:forced?`The selected switch cannot serve this endpoint mix with the current settings.`:(ctx.neutrik?'No Neutrik etherCON switch fits this room. The M4350-16M4V has 16 x 2.5G PoE++ ports (8 etherCON) and 4 x 25G uplinks; split the devices over more rooms, or set Connectors to Standard RJ45.':noFitMsg(S,nz))};
   opts.sort((a,b)=>a.score-b.score); return {groups:opts[0].groups,err:null};
 }
 function noFitMsg(S,items){
@@ -191,7 +193,7 @@ function islRequired(dem,S){
   return Math.max(dem.maxSw,base)/(S.oversub||1);
 }
 function solveCore(cat,PT,dem,S,forced){
-  const list=(forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'core').filter(p=>PT.some(t=>t.up&&t.media==='Fiber'&&N(p[t.col])>0)))
+  const list=(forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'core').filter(p=>!isNeutrik(p)&&PT.some(t=>t.up&&t.media==='Fiber'&&N(p[t.col])>0)))
     .filter(p=>timingOk(p,dem)&&!(dem.needAVB&&avbNoLag(p)&&dem.lagged));
   const cores=S.dualCore?2:1; let best=null, psuFail=false;
   const speeds=Object.keys(dem.links).map(Number).sort((a,b)=>b-a);
@@ -312,7 +314,7 @@ function designOnce(cat,state,upPref){
   const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||''}; bom.push(l);} l.qty+=qty; };
   const locs=state.locations.map(L=>({...L,items:L.eps.map(x=>({ep:epById[x.ep],qty:x.qty})).filter(x=>x.ep)}));
   const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,true]));
-  const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods}; };
+  const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik'}; };
   const ovr=L=>L.override&&L.override!=='Auto'?L.override:null;
   let standalone=false;
   // redundant power can apply everywhere or only in the main equipment room (MDF + core)
