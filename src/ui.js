@@ -685,10 +685,10 @@ async function buildPdf(v={}){
 
   // --- bill of materials ---
   doc.addPage(fmtName,'portrait'); y=M+16; h2('Bill of materials');
-  const R=rollup(), bom=[]; CATORDER.filter(c=>R.some(r=>r.cat===c)).forEach(c=>{ bom.push([{content:c.toUpperCase(),colSpan:4,styles:{fontStyle:'bold',fontSize:7.5,textColor:AVD,fillColor:G1}}]);
-    R.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.brand&&r.brand!=='NETGEAR'?`${r.brand}: ${r.desc}`:r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); });
-  y=at({startY:y,head:[['Part number','Description','Qty','Where']],body:bom,columnStyles:{0:{cellWidth:100,fontStyle:'bold'},2:{halign:'right',cellWidth:34},3:{cellWidth:120,textColor:MUT}},
-    didParseCell:d=>{ if(d.section==='head'&&d.column.index===2) d.cell.styles.halign='right'; }})+12;
+  const R=rollup(), bom=[]; CATORDER.filter(c=>R.some(r=>r.cat===c)).forEach(c=>{ bom.push([{content:c.toUpperCase(),colSpan:5,styles:{fontStyle:'bold',fontSize:7.5,textColor:AVD,fillColor:G1}}]);
+    R.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.brand||'',r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); });
+  y=at({startY:y,head:[['Part number','Brand','Description','Qty','Where']],body:bom,columnStyles:{0:{cellWidth:96,fontStyle:'bold'},1:{cellWidth:52},3:{halign:'right',cellWidth:30},4:{cellWidth:104,textColor:MUT}},
+    didParseCell:d=>{ if(d.section==='head'&&d.column.index===3) d.cell.styles.halign='right'; }})+12;
   para(`Part numbers are for ${P.region}${P.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.`);
 
   // --- power ---
