@@ -138,7 +138,8 @@ function evalN(cat,PT,p,D,n,S,ctx){
   if(ctx.standalone) up={speed:0,u:0};
   else {
     // stream bandwidth is typical, not peak, so uplinks keep a margin over it (line-rate is already worst case)
-    const bw=D.bw/n/S.oversub*(S.basis==='stream'?1+(S.streamHead||0)/100:1);
+    // the stream margin never takes a switch above the line-rate of its own devices
+    const bw=(S.basis==='stream'?Math.min(D.bw*(1+(S.streamHead||0)/100),D.lineBw||Infinity):D.bw)/n/S.oversub;
     const ups=PT.filter(t=>t.up&&rem[t.col]>0);
     const speeds=[...new Set(ups.flatMap(t=>t.speeds))].filter(s=>s>=Math.max(1,S.minUp||1));
     // AVB on this switch does not run over a LAG, so each core gets a single link
@@ -193,7 +194,7 @@ function demandOf(items,S,noSpare){
     const poe=w>0; const k=media+spd+(poe?'P':''); (map[k]=map[k]||{media,speed:spd,poe,q:0}).q+=q;
     if(w>30) D.poeBt+=q; else if(w>0) D.poeAt+=q;
     if(ep.Timing==='PTP-BC') D.needBC=true; if(ep.Timing==='AVB') D.needAVB=true;
-    D.poeW+=w*q; D.count+=q; D.bw+= q*(S.basis==='stream'? N(ep.Stream_Mbps)/1000 : spd);
+    D.poeW+=w*q; D.count+=q; D.bw+= q*(S.basis==='stream'? N(ep.Stream_Mbps)/1000 : spd); D.lineBw=(D.lineBw||0)+q*spd;
   }
   D.classes=Object.values(map).map(c=>({...c,q:ceil(c.q*sp)}));
   // spare ports apply to the port count only; PoE ports are sized to the devices actually listed

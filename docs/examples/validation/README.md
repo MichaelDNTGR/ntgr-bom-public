@@ -24,7 +24,7 @@ Catalog 2026.10.01d, Design priority **Best design** (fewest switches and uplink
 | V07 | Main room access switches, in-rack | M4350-40F4C | 1× M4350-40X4C 4×100G; 1× M4250-26G4XF-PoE+ 4×10G | 222 | OK |
 | V08 | ST 2110 25G fiber endpoints | M4350-40F4C | 1× M4350-16V4C 2×100G; 1× M4250-8G2XF-PoE+ 1×10G | 239 | OK |
 | V09 | 2:1 oversubscription | M4350-24F4V | 1× M4350-24X4V 2×25G; 1× M4350-24X8F8V 2×25G | 267 | OK: 2 × 25G per closet at 2:1 |
-| V10 | Stream bandwidth basis | M4250-16XF | 3× M4250-40G8XF-PoE+ 4×10G | 199 | OK: 3 larger M4250s instead of 4 |
+| V10 | Stream bandwidth basis | M4250-16XF | 2× M4350-48G4XF 4×10G | 149 | OK: stream margin capped at line-rate, 2 larger switches |
 | V11 | M4250 series only | M4250-16XF | 1× M4250-40G8XF-PoE+ 4×10G; 1× M4250-26G4XF-PoE+ 2×10G | 110 | OK |
 | V12 | Many 10G closets, core port pressure | 2 × M4350-16C | 6 rooms: 1× M4350-40X4C 2×100G | 1,053 | OK by price: 100G closets on M4350-16C cores |
 | V13 | Redundant power, TAA, Europe | M4350-32F8V | 1× M4350-24X4V 4×25G; 2× M4350-24M4X4V 2×25G | 348 | OK |
