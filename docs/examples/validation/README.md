@@ -56,5 +56,7 @@ Catalog 2026.10.01d, Design priority **Best design** (fewest switches and uplink
 | V39 | Prefer 25G, one closet beyond multimode reach | M4350-8M2V | 2 rooms: 1× M4350-24M4X4V 1×25G (+ third-party optics) | 132 | OK |
 | V40 | 16 x 10G copper encoders in one closet, priced | M4350-32F8V | 1× M4250-26G4XF-PoE+ 1×10G; 1× M4350-24X8F8V 8×25G | 203 | OK: 1 × 24X8F8V on 8 × 25G, not 2 × 8X8F with 32 optics |
 | V41 | Long single-mode run, 500G closet | M4350-16C | 1× M4350-40X4C 2×100G; 2× M4350-40X4C 4×100G (+ third-party optics) | 547 | OK: 2 × M4350-40X4C on 100G LR4, not 5 half-empty 24X4V on 25G LR; Closet 1 at 150 m MMF gets a placeholder (use SMF) |
+| V42 | 25 × ST 2110 at FOH, boundary clock | 2 × M4350-16C | 4× M4350-16V4C 4×100G | 859
+| V43 | 25 × ST 2110 at FOH, transparent clock allowed | 2 × M4350-16C | 2× M4500-48XF8C 8×100G | 841
 
 V06, V12, V18, V34, V36 and V41 depend most on the estimated third-party optic costs.

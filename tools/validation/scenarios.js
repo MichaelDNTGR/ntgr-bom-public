@@ -131,4 +131,10 @@ module.exports = [
   S('V41','Long single-mode run, 500G closet',
     '50 x 10G encoders at 600 m single mode: 2 x M4350-40X4C on 4 x 100G LR4 each, not 5 half-empty M4350-24X4V on 4 x 25G LR (40 long-reach optics).',
     {spare:0}, [MDF(), L('Closet 1','IDF',150,'MMF',[['EP-10G-TX',20]]), L('Closet 2','IDF',600,'SMF',[['EP-10G-TX',50]])]),
+  S('V42','25 x ST 2110 at FOH, boundary clock',
+    'ST 2110 timing on boundary clock (default), redundant core: 4 x M4350-16V4C (2 x 100G to each core limits each switch to 8 devices at line-rate).',
+    {spare:0, dualCore:true, psuRed:true}, [MDF(), L('FOH','IDF',700,'SMF',[['EP-25G-2110',25]])]),
+  S('V43','25 x ST 2110 at FOH, transparent clock allowed',
+    'Same FOH with "Transparent clock allowed": 2 x M4500-48XF8C (PTP transparent clock) instead of 4 x M4350-16V4C, with a warning that the datasheet lists ST 2110 on boundary-clock models only.',
+    {spare:0, dualCore:true, psuRed:true, ptpMode:'tc'}, [MDF(), L('FOH','IDF',700,'SMF',[['EP-25G-2110',25]])]),
 ];

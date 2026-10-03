@@ -159,6 +159,7 @@ Each device type can carry a `Timing` value in the Endpoints sheet:
 |---|---|
 | blank | Any switch. Every model supports PTPv2 transparent clock, which is enough for Dante. |
 | `PTP-BC` | The device's switch and the core must have a PTP boundary clock (M4350-8M2V, 16M4V, 24M4X4V, 24F4X, 16V4C, 40X4C, 40F4C, 16C). Used for ST 2110 video and ST 2110-30 / AES67 audio (SMPTE 2059-2). |
+| `PTP-BC` with **ST 2110 / AES67 timing = Transparent clock allowed** | Switches with PTP transparent clock also qualify (rest of the M4350 range, M4250, M4500). The designer decides; there is no size limit. Checks warns whenever a timing-critical device or the core is on a transparent-clock switch: NETGEAR's datasheet lists ST 2110 support on the boundary-clock models only, and transparent clock suits small, flat networks. |
 | `AVB` | The switch must support AVB. M4250 does not run AVB over a LAG, so an M4250 with AVB devices gets one uplink per core. A room that needs more than one link moves to M4350 or more M4250 units. |
 
 Devices without a timing need still go to the cheapest switch: in a mixed room, a split puts them on M4250 while the timing devices get an M4350.
@@ -201,7 +202,7 @@ The engine also tries splitting a room into pools: **1G/2.5G copper**, **multi-g
 
 ### Standalone
 
-If only one room has devices, the engine first tries that room **without uplinks**. If it fits on a single switch, the design is standalone: no uplinks, no core. Otherwise it sizes the room with uplinks and adds a core.
+If only one room has devices and the redundant core is off, the engine first tries that room **without uplinks**. If it fits on a single switch, the design is standalone: no uplinks, no core. Otherwise it sizes the room with uplinks and adds a core.
 
 ## 3. Sizing the core
 
