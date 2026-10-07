@@ -197,7 +197,7 @@ Some devices can run in another connection mode, set per device line in a room (
 | WBE758 | 10G, PoE++ (802.3bt, 39 W) | 5G, 2.5G or 1G port (backhaul limited, radios unaffected); PoE+ (802.3at, 25.5 W) with reduced radios: -50% 2.4 GHz, -25% 5/6 GHz. 802.3af not supported |
 | WBE718 | 2.5G, PoE+ (802.3at, 25 W) | 1G port; PoE (802.3af, 12.95 W) with reduced radios: -50% 2.4 GHz, -25% 5 GHz, no 6 GHz |
 
-The default is full performance; the tool never downgrades a device on its own. Checks shows a warning for reduced power (and for 1G backhaul on an AP) and a note for any other lower port speed. The BoM still lists the normal AP part number.
+In the network diagram, APs are drawn as a WiFi chip wired to the switch they connect to, with model, quantity and mode (for example "4 × WBE758 · 2.5G · PoE+"); a grey border marks a reduced mode. The default is full performance; the tool never downgrades a device on its own. Checks shows a warning for reduced power (and for 1G backhaul on an AP) and a note for any other lower port speed. The BoM still lists the normal AP part number.
 
 ### Neutrik etherCON rooms
 

@@ -339,7 +339,10 @@ function splitUnits(items,n,S){
     const q=N(it.qty), base=Math.floor(q/n), extra=q%n;
     const order=units.map((u,i)=>i).sort((a,b)=>units[a].bw-units[b].bw||units[a].count-units[b].count);
     const give=new Array(n).fill(base); for(let k=0;k<extra;k++) give[order[k]]++;
-    give.forEach((g,i)=>{ if(!g) return; const bw=g*bwOf(it.ep); units[i].eps.push({id:it.ep.Endpoint_ID,name:it.ep.Name,qty:g,bw}); units[i].bw+=bw; units[i].count+=g; });
+    give.forEach((g,i)=>{ if(!g) return; const bw=g*bwOf(it.ep), e=it.ep, b=e._base||e;
+      // wireless APs are drawn as their own chip on the diagram, with the model and connection mode
+      const ap=/wireless/i.test(b.Category||'')?{model:b.NETGEAR_Product_ID||b.Name,mode:`${N(e.Link_Speed_Gbps)}G · ${poeLabel(N(e.PoE_W))}`,reduced:!!e._reduced||!!e._speedCut}:null;
+      units[i].eps.push({id:e.Endpoint_ID,name:e.Name,qty:g,bw,ap}); units[i].bw+=bw; units[i].count+=g; });
   }
   return units;
 }

@@ -217,10 +217,13 @@ function diagram(forExport,pal){
   const yGw=30, yCore=core?140:0, cx=W/2;
   const box=(x,y,w,h,f,st)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${f}"${st?` stroke="${st}" stroke-width="1.5"`:''}/>`;
   const text=(x,y,t,o={})=>`<text x="${x}" y="${y}" fill="${o.c||C.txt}" font-size="${o.s||13}" font-weight="${o.w||400}" text-anchor="${o.a||'middle'}" font-family="${F}">${esc(t)}</text>`;
-  const UH=34, UG=6, EL=15; const unitH=(un,n)=>UH+un.eps.length*EL+8+(n.up.u?34:18);
+  // APs are drawn as WiFi chips wired to their switch; other devices stay in the switch's list
+  const UH=34, UG=6, EL=15, APH=28; const devs=un=>un.eps.filter(e=>!e.ap), aps=un=>un.eps.filter(e=>e.ap);
+  const unitH=(un,n)=>UH+devs(un).length*EL+8+(n.up.u?34:18), apH=un=>aps(un).length?aps(un).length*APH+4:0;
+  const wifi=(cx,cy,c)=>`<g fill="none" stroke="${c}" stroke-width="1.6" stroke-linecap="round"><path d="M${cx-7} ${cy-1} A10 10 0 0 1 ${cx+7} ${cy-1}"/><path d="M${cx-4.5} ${cy+2} A6.5 6.5 0 0 1 ${cx+4.5} ${cy+2}"/><path d="M${cx-2} ${cy+5} A3 3 0 0 1 ${cx+2} ${cy+5}"/></g><circle cx="${cx}" cy="${cy+7.5}" r="1.4" fill="${c}"/>`;
   // a collapsed core lists the links it terminates inside the main-room box
   const ccRows=cc&&core.ports?Object.values(core.ports.reduce((m,r)=>{ const k=[r.loc,r.speed,r.sku].join('|'); (m[k]=m[k]||{...r,perCore:0}).perCore+=r.perCore; return m; },{})):[];
-  const roomH=L=>{ const ns=nodes.filter(n=>n.loc===L.name); return 44+ns.reduce((a,n)=>a+16+n.units.reduce((b,un)=>b+unitH(un,n)+UG,0),0)+(result.links.some(l=>l.loc===L.name)?52:36)+8+(L===coreRoom?20+ccRows.length*15:0); };
+  const roomH=L=>{ const ns=nodes.filter(n=>n.loc===L.name); return 44+ns.reduce((a,n)=>a+16+n.units.reduce((b,un)=>b+unitH(un,n)+apH(un)+UG,0),0)+(result.links.some(l=>l.loc===L.name)?52:36)+8+(L===coreRoom?20+ccRows.length*15:0); };
   const hCoreRoom=coreRoom?roomH(coreRoom):0, yLoc=core?yCore+(cc?hCoreRoom:coreH)+98:(gwOn?170:40);
   const cb=[]; if(cc) cb.push({x:cx-colW/2,y:yCore,w:colW,h:hCoreRoom}); else if(core){ const bw=cports.length?260:190, cg=cports.length?100:40, tot=core.k*bw+(core.k-1)*cg; for(let i=0;i<core.k;i++) cb.push({x:cx-tot/2+i*(bw+cg),y:yCore,w:bw,h:coreH}); }
   const hs=row.map(roomH);
@@ -252,11 +255,15 @@ function diagram(forExport,pal){
         const gwHere=gwRoom&&gwRoom.loc===L.name&&gwRoom.model===n.model&&!gwCounted?(gwCounted=true,1):0;
         const tp=n.ports||0, usedP=Math.min(tp,un.count+(n.up.u||0)+gwHere+(n.coreLinks||0)), gw=110;
         if(tp){ s+=`<rect x="${x+22}" y="${yy+21}" width="${gw}" height="6" rx="3" fill="${C.mut}" opacity="0.25"/><rect x="${x+22}" y="${yy+21}" width="${Math.max(3,gw*usedP/tp)}" height="6" rx="3" fill="${C.line}"/>`+text(x+22+gw+8,yy+27,`${usedP} of ${tp} ports used`,{a:'start',s:9.5,c:C.mut}); }
-        let ly=yy+UH+10; un.eps.forEach(ep=>{ s+=text(x+22,ly,cut(`${ep.qty} × ${ep.name}`,29),{a:'start',s:10.5,c:C.mut})+text(x+colW-22,ly,gb(ep.bw),{a:'end',s:10.5,c:C.mut}); ly+=EL; });
+        let ly=yy+UH+10; devs(un).forEach(ep=>{ s+=text(x+22,ly,cut(`${ep.qty} × ${ep.name}`,29),{a:'start',s:10.5,c:C.mut})+text(x+colW-22,ly,gb(ep.bw),{a:'end',s:10.5,c:C.mut}); ly+=EL; });
         ly-=4; s+=`<line x1="${x+20}" y1="${ly}" x2="${x+colW-20}" y2="${ly}" stroke="${C.mut}" stroke-width="1" opacity="0.5"/>`;
         s+=text(x+22,ly+14,'Switch total',{a:'start',s:10.5,w:600})+text(x+colW-22,ly+14,gb(un.bw),{a:'end',s:10.5,w:700});
         if(cap){ const r=un.bw/cap; s+=text(x+22,ly+28,`${dc?`${per} × ${n.up.speed}G per core`:`Uplink ${per} × ${n.up.speed}G`}${r<=1?'':` (${r.toFixed(1)}:1)`}`,{a:'start',s:10.5,c:C.mut})+text(x+colW-22,ly+28,gb(cap),{a:'end',s:10.5,w:600,c:r<=(state.project.oversub||1)+1e-9?C.line:C.txt}); }
-        yy+=h+UG; }); });
+        // AP chips under the switch, wired into it
+        aps(un).forEach((ap,k)=>{ const cy=yy+h+6+k*APH, cx0=x+38, cw=colW-50;
+          s+=`<path d="M${x+26} ${yy+h} V${cy+11} H${cx0}" fill="none" stroke="${C.line}" stroke-width="1.5"/>`+box(cx0,cy,cw,22,C.bg,ap.ap.reduced?C.mut:C.line)+wifi(cx0+13,cy+8,C.line)
+            +text(cx0+26,cy+15,`${ap.qty} × ${ap.ap.model}`,{a:'start',s:11,w:600})+text(cx0+cw-8,cy+15,ap.ap.mode,{a:'end',s:10,c:ap.ap.reduced?C.txt:C.mut}); });
+        yy+=h+apH(un)+UG; }); });
     yy+=4; s+=`<line x1="${x+14}" y1="${yy}" x2="${x+colW-14}" y2="${yy}" stroke="${C.mut}" stroke-width="1" opacity="0.6"/>`;
     s+=text(x+16,yy+17,line?'Room total at line-rate':'Room total stream bandwidth',{a:'start',s:11.5,w:600})+text(x+colW-16,yy+17,gb(tot),{a:'end',s:11.5,w:700});
     if(upCap){ const ratio=tot/upCap; s+=text(x+16,yy+33,`${result.dualCore&&core&&core.k>1?'Room uplink per core':'Room uplink capacity'}${ratio<=1?'':` (${ratio.toFixed(1)}:1)`}`,{a:'start',s:11,c:C.mut})+text(x+colW-16,yy+33,gb(upCap),{a:'end',s:11,w:600,c:ratio<=(state.project.oversub||1)+1e-9?C.line:C.txt}); }
