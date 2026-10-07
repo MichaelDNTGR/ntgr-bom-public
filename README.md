@@ -58,7 +58,7 @@ Example: 16 × 1G encoders + 8 × Dante devices on one switch
 
 ## Pro AV Design mode
 
-Open the page with `?mode=proav` (for example `index.html?mode=proav`) for the NETGEAR Pro AV Design team: exports (PDF, diagram, CSV, Excel, design summary) carry no "not validated" marking, and team-mode controls are shown. The mode never marks a design as validated; that stays with the admin flow. It is a simple switch, not access control: anyone with the URL can use it.
+Open the page with `?mode=proav` for the NETGEAR Pro AV Design team. Exports (PDF, diagram, CSV, Excel, design summary) become a **design proposal** without a "not validated" marking, and team-mode controls are shown. Add `&by=` and `&email=` to name the preparer, for example `index.html?mode=proav&by=Michael%20Dijk&email=mdijk@netgear.com`: the proposal then says who prepared it and sends pricing questions to that person. The mode never marks a design as validated; that stays with the admin flow. It is a simple switch, not access control: anyone with the URL can use it.
 
 ## Validation and catalog tools
 

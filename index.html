@@ -834,9 +834,17 @@ let DB=null, UID=null, REQS=[], staged=null;
 const save=()=>{ try{ localStorage.setItem('ntgr-bom-v2',JSON.stringify(state)); }catch(e){} };
 // ?mode=proav: NETGEAR Pro AV Design mode. Exports carry no "not validated" marking (they never claim validation either:
 // that stays with the admin flow), and team-mode controls are shown. A simple public switch, not access control.
-const PROAV=(()=>{ try{ return new URLSearchParams(location.search).get('mode')==='proav'; }catch(e){ return false; } })();
+// &by=<name>&email=<address> name the preparer on Pro AV exports (cleaned: plain text, length-limited, valid email only)
+const QS=(()=>{ try{ return new URLSearchParams(location.search); }catch(e){ return new URLSearchParams(''); } })();
+const PROAV=QS.get('mode')==='proav';
 if(PROAV) canTeam=true;
-const PROAV_NOTE='Prepared with the NETGEAR AV Network BoM builder. Pricing and availability are provided by NETGEAR or your distributor.';
+const PREP=(()=>{ const n=String(QS.get('by')||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60), e=String(QS.get('email')||'').trim().slice(0,80);
+  return {name:n,email:/^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(e)?e:''}; })();
+const PROAV_TITLE='DESIGN PROPOSAL';
+const prepContact=()=>PREP.name&&PREP.email?`${PREP.name} at ${PREP.email}`:(PREP.email||PREP.name||`the NETGEAR Pro AV Design team at ${MAIL()}`);
+const proavNote=()=>`Prepared by ${PREP.name?`${PREP.name}${PREP.email?` (${PREP.email})`:''}, NETGEAR Pro AV Design team`:'the NETGEAR Pro AV Design team'}, based on the requirements provided. Endpoints, quantities and cable distances must be confirmed before ordering. For pricing and availability, contact ${prepContact()}.`;
+const proavShort=()=>`NETGEAR Pro AV design proposal${PREP.name?`, prepared by ${PREP.name}`:''}`;
+const priceLine=()=>PROAV?`For pricing and availability, contact ${prepContact()}.`:'Pricing and availability are provided by NETGEAR or your distributor after validation.';
 const team=()=>canTeam; // editors see advanced controls inline; admin tools live on the admin page
 
 function swOpts(sel){ return `<option value="Auto"${sel==='Auto'?' selected':''}>Automatic</option>`+CAT.Products.filter(p=>p.Category==='Switch').map(p=>`<option value="${esc(p.Product_ID)}"${sel===p.Product_ID?' selected':''}>${esc(p.Model_Name)}</option>`).join(''); }
@@ -994,7 +1002,7 @@ function roomPower(l){ const V=state.project.voltage, r=result.power.filter(p=>p
 function stats(){ return {sw:result.bom.filter(b=>b.cat==='Switches').reduce((s,b)=>s+b.qty,0),eps:result.totalEps,poe:result.power.reduce((s,p)=>s+p.poe*p.n,0),est:result.power.reduce((s,p)=>s+p.est*p.n,0),ru:result.power.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0)}; }
 function renderResults(){
   const s=stats(), T=result.settings;
-  if(PROAV) $('#disc').innerHTML=`<div><b>Pro AV Design mode.</b> Exports carry no "not validated" marking. Use it only for designs your team has reviewed.</div>`; else
+  if(PROAV) $('#disc').innerHTML=`<div><b>Pro AV Design mode.</b> Exports are design proposals${PREP.name?` prepared by ${esc(PREP.name)}${PREP.email?` (${esc(PREP.email)})`:''}`:''}, without a "not validated" marking. Use it only for designs your team has reviewed.${PREP.name&&PREP.email?'':' Add &amp;by=Your%20Name&amp;email=you@netgear.com to the URL to name the preparer.'}</div>`; else
   $('#disc').innerHTML=`<div><b>Estimate for planning only.</b> ${esc(T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the ProAV Design team before ordering.')}<br>Please click <b>Request validation</b> to download the design file.</div><button class="btn" data-act="request">Request validation</button>`;
   $('#stats').innerHTML=`<div><b>${fmt(s.eps)}</b><span>devices</span></div><div><b>${fmt(s.sw)}</b><span>switches</span></div><div><b>${fmt(s.poe)} W</b><span>PoE load</span></div><div><b>${fmt(s.est/1000,1)} kW</b><span>estimated power</span></div><div><b>${fmt(s.ru,1)} U</b><span>rack space</span></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));
@@ -1007,7 +1015,7 @@ function renderResults(){
       brandsOf(rows).map(br=>{ const br_=rows.filter(r=>brandKey(r)===br), nc=team()?6:5;
         return `<tr class="brand"><td colspan="${nc}">${esc(br)}${brandNote(br)?`<small>${esc(brandNote(br))}</small>`:''}</td></tr>`+
       CATORDER.filter(c=>br_.some(r=>r.cat===c)).map(c=>`<tr class="grp"><td colspan="${nc}">${c}</td></tr>`+br_.filter(r=>r.cat===c).map(r=>`<tr class="${/^TBD/.test(r.sku)?'tbd':''}"><td class="sku">${/^TBD/.test(r.sku)?'To be confirmed':esc(r.sku)}</td><td>${esc(r.brand||'')}</td><td>${esc(r.desc)}</td><td class="r"><b>${fmt(r.qty)}</b></td><td>${esc([...r.locs].join(', '))}</td>${team()?`<td class="mut">${esc(r.note)}</td>`:''}</tr>`).join('')).join(''); }).join('')}</tbody></table></div>
-      <p class="cap">Part numbers are for ${esc(state.project.region)}${state.project.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.</p>`; }
+      <p class="cap">Part numbers are for ${esc(state.project.region)}${state.project.taa?', TAA-compliant where available':''}. ${esc(priceLine())}</p>`; }
   if(tab==='power'){ const P=state.project, locs=[...new Set(result.power.map(p=>p.loc))], eff=+T.PSU_Efficiency||0.9;
     out.innerHTML=`<div class="closets">${locs.map(l=>{ const r=roomPower(l);
         return `<div class="closet"><h4>${esc(l)}</h4><dl><dt>Estimated draw</dt><dd>${fmt(r.w)} W</dd><dt>Datasheet maximum</dt><dd>${fmt(r.mx)} W</dd><dt>Heat load</dt><dd>${fmt(r.btu)} BTU/hr</dd><dt>Current at ${P.voltage} V</dt><dd>${fmt(r.amps,1)} A</dd><dt>Circuits</dt><dd>${r.circ} × ${r.cA} A</dd><dt>UPS size</dt><dd>${fmt(r.va)} VA or more</dd><dt>Rack space</dt><dd>${fmt(r.ru,1)} U</dd></dl></div>`;}).join('')}</div>
@@ -1100,7 +1108,7 @@ function diagram(forExport,pal){
     if(gwOn&&!gwRoom){ const gx=cb[0].x+cb[0].w/2; lines+=`<line x1="${gx}" y1="${yCore}" x2="${cx}" y2="${yGw+48}" stroke="${C.gw}" stroke-width="1.5"/>`;
       if(gwLbl) labels+=box((gx+cx)/2-95,yGw+64,190,30,C.bg)+text((gx+cx)/2,yGw+76,gwLbl[0],{s:11.5,w:600,c:C.mut})+text((gx+cx)/2,yGw+89,gwLbl[1],{s:10.5,c:C.mut}); } }
   if(gwOn) s+=box(cx-95,yGw,190,48,C.box)+text(cx,yGw+21,'PR460X Pro Router',{s:13,w:700})+text(cx,yGw+37,'Internet gateway',{s:10.5,c:C.mut});
-  const foot=forExport&&!pal?text(20,H-22,PROAV?`${state.project.name||'Project'}: NETGEAR Pro AV design. Catalog ${CATMETA.version}.`:`${state.project.name||'Project'}: estimate only, must be validated by the ProAV Design team before ordering. Catalog ${CATMETA.version}.`,{a:'start',s:11,c:C.mut}):'';
+  const foot=forExport&&!pal?text(20,H-22,PROAV?`${state.project.name||'Project'}: ${proavShort()}. Catalog ${CATMETA.version}.`:`${state.project.name||'Project'}: estimate only, must be validated by the ProAV Design team before ordering. Catalog ${CATMETA.version}.`,{a:'start',s:11,c:C.mut}):'';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Network diagram">${forExport?`<style>@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;display=swap');</style><rect width="100%" height="100%" fill="${C.page}"/>`:''}${lines}${s}${labels}${foot}</svg>`;
 }
 
@@ -1151,7 +1159,7 @@ function summaryText(meta){ const P=state.project, s=stats(), L=[];
   const line=(a='')=>L.push(a);
   line(`DESIGN VALIDATION REQUEST`); line(`Project: ${P.name||'Untitled project'}`); line(`Request ID: ${meta.rid}`); line(`Created: ${meta.at}`);
   line(`Requested by: ${meta.name||'-'} <${meta.email}>${meta.company?`, ${meta.company}`:''}`); line(`Catalog version: ${CATMETA.version}`); line();
-  line(PROAV?PROAV_NOTE:'ESTIMATE ONLY: '+(result.settings.Disclaimer||'')); line();
+  line(PROAV?proavNote():'ESTIMATE ONLY: '+(result.settings.Disclaimer||'')); line();
   line('SETTINGS'); line(`Region: ${P.region}   Mains: ${P.voltage} V   TAA: ${P.taa?'Yes':'No'}`);
   line(`Redundant power: ${P.psuRed?(P.psuScope==='mdf'?'main equipment room only':'all switches'):'No'}   Redundant core: ${P.dualCore?'Yes':'No'}   Gateway: ${P.gateway?'PR460X':'No'}`);
   line(`Switch series: ${P.family==='Auto'?'Best fit':P.family+' only'}   Design basis: ${P.basis==='stream'?'stream bandwidth':'line-rate'}   Oversubscription: ${P.oversub}:1   Spare ports: ${P.spare}%   PoE headroom: ${P.poeHead}%`); line();
@@ -1352,7 +1360,7 @@ async function saveFile(name,data){
   try{ browserDownload(name,data); }
   catch(e){ console.error('Download failed',e); toast('Could not save the file.'); }
 }
-const discRow=()=>[[PROAV?PROAV_NOTE:'ESTIMATE ONLY: '+(result.settings.Disclaimer||'')],['Validation: '+(result.settings.Validation_Contact_Email||'')],['Catalog version: '+CATMETA.version],[]];
+const discRow=()=>[[PROAV?proavNote():'ESTIMATE ONLY: '+(result.settings.Disclaimer||'')],[PROAV?'Contact: '+prepContact():'Validation: '+(result.settings.Validation_Contact_Email||'')],['Catalog version: '+CATMETA.version],[]];
 function exportCsv(){ const rows=[...discRow(),['Category','Part number','Brand','Description','Qty','Where'],...rollup().map(r=>[r.cat,r.sku,r.brand||'',r.desc,r.qty,[...r.locs].join('; ')])];
   track('bom'); saveFile(`${slug()}-bom.csv`,rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n')); }
 function exportSvg(){ saveFile(`${slug()}-network.svg`,diagram(true)); track('diagram'); }
@@ -1448,11 +1456,11 @@ async function buildPdf(v={}){
   font('normal',14,WH); doc.text(longDate(now),M+8,cy); cy+=20;
   font('normal',10,G4); doc.text(`${P.region}${P.taa?', TAA-compliant':''}   ·   Catalog ${CATMETA.version}${v.rid?`   ·   Request ${v.rid}`:''}`,M+8,cy); cy+=40;
   // validation stamp (8 pt radius per brand)
-  const sw=pw()-2*M-16, sh=62;
+  font('normal',9,WH); const sw=pw()-2*M-16, sh=(!ok&&PROAV)?Math.max(62,40+doc.splitTextToSize(proavNote(),sw-36).length*11+6):62;
   if(ok){ doc.setFillColor(...AV); doc.roundedRect(M+8,cy,sw,sh,8,8,'F'); font('bold',13,G7); doc.text('VALIDATED BY THE PRO AV DESIGN TEAM',M+26,cy+26,{charSpace:0.4});
     font('normal',10,G7); doc.text(`${v.by?`Reviewed by ${v.by}, `:''}${longDate(when)}`,M+26,cy+44); }
-  else if(PROAV){ doc.setDrawColor(...AV); doc.setLineWidth(1.2); doc.roundedRect(M+8,cy,sw,sh,8,8,'S'); font('bold',13,AV); doc.text('NETGEAR PRO AV DESIGN',M+26,cy+26,{charSpace:0.4});
-    font('normal',10,WH); doc.text(doc.splitTextToSize(PROAV_NOTE,sw-36),M+26,cy+44); }
+  else if(PROAV){ doc.setDrawColor(...AV); doc.setLineWidth(1.2); doc.roundedRect(M+8,cy,sw,sh,8,8,'S'); font('bold',13,AV); doc.text(PROAV_TITLE,M+26,cy+26,{charSpace:0.4});
+    font('normal',9,WH); doc.text(doc.splitTextToSize(proavNote(),sw-36),M+26,cy+40); }
   else { doc.setDrawColor(...AV); doc.setLineWidth(1.2); doc.roundedRect(M+8,cy,sw,sh,8,8,'S'); font('bold',13,AV); doc.text('NOT VALIDATED',M+26,cy+26,{charSpace:0.4});
     font('normal',10,WH); doc.text(doc.splitTextToSize('Estimate for planning only. Send this design to the Pro AV Design team for validation before ordering.',sw-36),M+26,cy+44); }
   // key figures along the bottom
@@ -1494,12 +1502,12 @@ async function buildPdf(v={}){
   h3('Professional services');
   y=at({startY:y,body:AV_OFFER.services.map(([t,d])=>[t,d]),columnStyles:{0:{cellWidth:150,fontStyle:'bold'},1:{textColor:G6}}})+8;
   y=at({startY:y,head:[['Part number','Service']],body:AV_OFFER.serviceSkus,columnStyles:{0:{cellWidth:150,fontStyle:'bold'}}})+8;
-  para(AV_OFFER.servicesNote);
+  para(PROAV?`Pricing depends on project scope and the level of support, and includes travel and expenses. For a quote, contact ${prepContact()}.`:AV_OFFER.servicesNote);
 
   // --- design summary ---
   doc.addPage(fmtName,'portrait'); y=M+16; h2('Design summary');
   const dis=ok?`This design was validated by the Pro AV Design team on ${longDate(when)}. Pricing and availability are provided by NETGEAR or your distributor.`
-    :PROAV?PROAV_NOTE:`Estimate for planning only. ${T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the Pro AV Design team before ordering.'} Validation: ${MAIL()}`;
+    :PROAV?proavNote():`Estimate for planning only. ${T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the Pro AV Design team before ordering.'} Validation: ${MAIL()}`;
   font('normal',8.5,INK); const dl=doc.splitTextToSize(dis,pw()-2*M-28), dh=dl.length*11.5+18;
   doc.setFillColor(...G1); doc.setDrawColor(...AVD); doc.setLineWidth(0.75); doc.roundedRect(M,y,pw()-2*M,dh,6,6,'FD'); doc.text(dl,M+14,y+17); y+=dh+12;
   if(result.errors.length) para(`${result.errors.length} issue${result.errors.length>1?'s':''} must be resolved before this design is complete. See Checks.`,{c:INFO});
@@ -1528,7 +1536,7 @@ async function buildPdf(v={}){
       RB.filter(r=>r.cat===c).forEach(r=>bom.push([sku(r.sku),r.brand||'',r.desc,{content:fmt(r.qty),styles:{fontStyle:'bold'}},[...r.locs].join(', ')])); }); });
   y=at({startY:y,head:[['Part number','Brand','Description','Qty','Where']],body:bom,columnStyles:{0:{cellWidth:96,fontStyle:'bold'},1:{cellWidth:52},3:{halign:'right',cellWidth:30},4:{cellWidth:104,textColor:MUT}},
     didParseCell:d=>{ if(d.section==='head'&&d.column.index===3) d.cell.styles.halign='right'; }})+12;
-  para(`Part numbers are for ${P.region}${P.taa?', TAA-compliant where available':''}. Pricing and availability are provided by NETGEAR or your distributor after validation.`);
+  para(`Part numbers are for ${P.region}${P.taa?', TAA-compliant where available':''}. ${priceLine()}`);
 
   // --- power ---
   y+=10; h2('Power and rack space');
@@ -1551,7 +1559,7 @@ async function buildPdf(v={}){
     body:result.links.map(l=>[l.loc,l.model,l.n,l.u,l.speed+'G',l.media+(l.media!=='in-rack'?`, ${l.dist} m`:''),sku(l.optic)]),columnStyles:{2:{halign:'right'},3:{halign:'right'}}})+12:(para('Single switch, no uplinks needed.'),y);
 
   // --- footer on every page after the cover ---
-  const n=doc.getNumberOfPages(), foot=ok?`${name}: validated by the Pro AV Design team, ${longDate(when)}.`:PROAV?`${name}: NETGEAR Pro AV design report.`:`${name}: estimate only, not validated. Must be validated by the Pro AV Design team before ordering.`;
+  const n=doc.getNumberOfPages(), foot=ok?`${name}: validated by the Pro AV Design team, ${longDate(when)}.`:PROAV?`${name}: ${proavShort()}.`:`${name}: estimate only, not validated. Must be validated by the Pro AV Design team before ordering.`;
   for(let i=2;i<=n;i++){ doc.setPage(i); doc.setDrawColor(...G3); doc.setLineWidth(0.5); doc.line(M,ph()-M+4,pw()-M,ph()-M+4);
     font('normal',7.5,MUT); doc.text(foot,M,ph()-M+16); doc.text(`Page ${i} of ${n}`,pw()-M,ph()-M+16,{align:'right'}); }
   doc.setProperties({title:`${name}: AV network design report`,subject:ok?'Validated NETGEAR AV network design':'NETGEAR AV network design estimate',creator:'NETGEAR AV BoM builder'});
