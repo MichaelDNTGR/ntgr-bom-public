@@ -89,7 +89,7 @@ function renderInputs(){
         <label class="fld"><span>Fiber type</span><select data-lf="media"><option value="MMF"${L.media==='MMF'?' selected':''}>Multimode (OM3/OM4)</option><option value="SMF"${L.media==='SMF'?' selected':''}>Single mode</option></select></label></div>`:''}
       <div class="eph"><span>Device</span><span>Qty</span></div>
       <div class="eps">${L.eps.map((e,ei)=>`<div class="ep" data-e="${ei}"><select data-ef="ep" aria-label="Device type">${epOpts(e.ep)}</select>
-        <input type="number" min="0" data-ef="qty" value="${esc(e.qty)}" aria-label="Quantity"><button class="ghost x" data-act="dele" aria-label="Remove device">×</button></div>`).join('')}</div>
+        <input type="number" min="0" data-ef="qty" value="${esc(e.qty)}" aria-label="Quantity"><button class="ghost x" data-act="dele" aria-label="Remove device">×</button>${(()=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep), o=ENG.epConnOptions(ep); return o.length?`<label class="conn"><span>Connection</span><select data-ef="conn" aria-label="Connection">${o.map(x=>`<option value="${x.value}"${(e.conn||'')===x.value?' selected':''}>${esc(x.label)}</option>`).join('')}</select></label>`:''; })()}</div>`).join('')}</div>
       <div class="lfoot"><button class="ghost add" data-act="adde">Add device</button><span class="mut">${fmt(total)} devices</span></div>
       <label class="fld wide"><span>Connectors</span><select data-lf="conn"><option value=""${L.conn?'':' selected'}>Default (RJ45 and LC fiber)</option><option value="neutrik"${L.conn==='neutrik'?' selected':''}>Neutrik (etherCON)</option></select></label>
       ${L.conn==='neutrik'?`<label class="fld wide"><span>Uplink card (M4350-16M4V)</span><select data-lf="card"><option value=""${L.card?'':' selected'}>APM414V: 4 × SFP28, LC fiber (included)</option><option value="quad"${L.card==='quad'?' selected':''}>opticalCON QUAD (APM414SD multimode / APM414LD single mode)</option></select></label>`:''}
@@ -118,7 +118,7 @@ document.addEventListener('input',ev=>{
   if(t.dataset.p){ let v=val; if(['dualUplink'].includes(t.dataset.p)&&t.tagName==='SELECT') v=(val==='true'); if(['voltage','oversub'].includes(t.dataset.p)) v=+val;
     state.project[t.dataset.p]=v; if(t.dataset.p==='dualCore'){ state.project.dualUplink=v; } }
   else if(t.dataset.lf){ state.locations[+t.closest('.loc').dataset.l][t.dataset.lf]=val; }
-  else if(t.dataset.ef){ state.locations[+t.closest('.loc').dataset.l].eps[+t.closest('.ep').dataset.e][t.dataset.ef]=val; }
+  else if(t.dataset.ef){ const line=state.locations[+t.closest('.loc').dataset.l].eps[+t.closest('.ep').dataset.e]; line[t.dataset.ef]=val; if(t.dataset.ef==='ep') line.conn=''; }
   else if(t.dataset.xf){ const e=state.endpoints[+t.closest('.lr').dataset.i]; e[t.dataset.xf]=t.dataset.xf==='Link_Speed_Gbps'?+val:val; }
   else return;
   if(t.tagName==='SELECT'||t.type==='checkbox'||t.type==='radio') run(); else { save(); later(); } // typing: one design run 300 ms after the last keystroke
@@ -534,7 +534,7 @@ function exportSvg(){ saveFile(`${slug()}-network.svg`,diagram(true)); track('di
 function buildXlsx(){ if(!window.XLSX){ toast('Spreadsheet library did not load.'); return null; }
   const wb=XLSX.utils.book_new(), P=state.project;
   const info=[...discRow(),['Project',P.name],['Created',new Date().toISOString().slice(0,10)],['Region',P.region],['TAA required',P.taa?'Yes':'No'],['Redundant power',P.psuRed?(P.psuScope==='mdf'?'Main equipment room only':'All switches'):'No'],['Redundant core',P.dualCore?'Yes':'No'],['Design basis',P.basis==='line'?'Line-rate':'Stream'],['Oversubscription',P.oversub+':1'],['Mains voltage',P.voltage],[],['Room','Type','Device','Qty','Link Gbps','Media','PoE W']];
-  state.locations.forEach(L=>L.eps.forEach(e=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep)||{}; info.push([L.name,L.type,ep.Name,e.qty,ep.Link_Speed_Gbps,ep.Media,ep.PoE_W]); }));
+  state.locations.forEach(L=>L.eps.forEach(e=>{ const ep=ENG.epVariant(state.endpoints.find(z=>z.Endpoint_ID===e.ep),e.conn)||{}; info.push([L.name,L.type,ep.Name,e.qty,ep.Link_Speed_Gbps,ep.Media,ep.PoE_W]); }));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),'Project');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([...discRow(),['Category','Part number','Brand','Description','Qty','Where','Notes'],...rollup().map(r=>[r.cat,r.sku,r.brand||'',r.desc,r.qty,[...r.locs].join('; '),r.note])]),'BoM');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Room','Category','Part number','Brand','Description','Qty'],...result.bom.map(b=>[b.loc,b.cat,b.sku,b.brand||'',b.desc,b.qty])]),'BoM by room');
@@ -680,7 +680,7 @@ async function buildPdf(v={}){
   h3('Rooms and devices');
   const rows=[]; state.locations.forEach(L=>{ const n=L.eps.reduce((a,e)=>a+(+e.qty||0),0);
     rows.push([{content:`${L.name}   ·   ${L.type==='MDF'?'MDF':`IDF, ${fmt(L.distance)} m ${L.media==='SMF'?'single mode':'multimode'} fiber`}   ·   ${n} devices`,colSpan:5,styles:{fontStyle:'bold',fillColor:G1}}]);
-    L.eps.forEach(e=>{ const ep=state.endpoints.find(z=>z.Endpoint_ID===e.ep)||{}; rows.push([ep.Name||e.ep,ep.Category||'',fmt(e.qty),ep.Link_Speed_Gbps?ep.Link_Speed_Gbps+'G '+(ep.Media||''):'',ep.PoE_W?fmt(ep.PoE_W)+' W':'–']); }); });
+    L.eps.forEach(e=>{ const ep=ENG.epVariant(state.endpoints.find(z=>z.Endpoint_ID===e.ep),e.conn)||{}; rows.push([ep.Name||e.ep,ep.Category||'',fmt(e.qty),ep.Link_Speed_Gbps?ep.Link_Speed_Gbps+'G '+(ep.Media||''):'',ep.PoE_W?fmt(ep.PoE_W)+' W':'–']); }); });
   y=at({startY:y,head:[['Device','Category','Qty','Link','PoE each']],body:rows,columnStyles:{2:{halign:'right',cellWidth:40},3:{cellWidth:80},4:{halign:'right',cellWidth:60}}})+10;
 
   // --- diagram: landscape page, fitted ---

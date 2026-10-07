@@ -345,6 +345,24 @@ function splitUnits(items,n,S){
 }
 // Build the whole design with each uplink strategy and keep the cheapest one that works, core included.
 const STRATEGIES=['low','fewest','fast','cost'];
+// connection mode of a device line: conn = "<speed>|<r>" (r = reduced PoE). Returns a variant endpoint the engine sizes normally.
+const poeLabel=w=>w>30?'PoE++':(w>15.4?'PoE+':(w>0?'PoE':'no PoE'));
+function epConnOptions(ep){
+  if(!ep) return [];
+  const native=N(ep.Link_Speed_Gbps), speeds=[native,...String(ep.Alt_Link_Speeds_Gbps||'').split(/[,; ]+/).map(Number).filter(x=>x>0&&x!==native)];
+  const red=N(ep.Reduced_PoE_W)>0; if(speeds.length<2&&!red) return [];
+  const out=[]; for(const sp of speeds) for(const r of red?[false,true]:[false]) out.push({value:(sp===native&&!r)?'':`${sp}|${r?'r':''}`,speed:sp,reduced:r,
+    label:`${sp}G, ${r?(ep.Reduced_PoE_Label||'reduced PoE')+' (reduced radios)':poeLabel(N(ep.PoE_W))}${sp===native&&!r?' (full performance)':''}`});
+  return out;
+}
+function epVariant(ep,conn){
+  if(!ep||!conn) return ep;
+  const [a,b]=String(conn).split('|'), native=N(ep.Link_Speed_Gbps);
+  const opt=epConnOptions(ep).find(o=>o.speed===(N(a)||native)&&o.reduced===(b==='r')); if(!opt||(!opt.reduced&&opt.speed===native)) return ep;
+  const sp=opt.speed, red=opt.reduced, tag=[sp<native?sp+'G':'',red?String(ep.Reduced_PoE_Label||'reduced PoE').split(' ')[0]:''].filter(Boolean).join(', ');
+  return {...ep,Endpoint_ID:`${ep.Endpoint_ID}@${sp}${red?'r':''}`,Name:`${ep.Name} (${tag})`,Link_Speed_Gbps:sp,PoE_W:red?N(ep.Reduced_PoE_W):N(ep.PoE_W),
+    Stream_Mbps:Math.min(N(ep.Stream_Mbps)||sp*1000,sp*1000),_base:ep,_reduced:red,_speedCut:sp<native};
+}
 function designBy(cat,state){
   const runs=STRATEGIES.map(p=>({p,r:designOnce(cat,state,p)}));
   const ok=runs.filter(x=>!x.r.errors.length);
@@ -404,7 +422,11 @@ function designOnce(cat,state,upPref){
   // brand shown in the BoM: NETGEAR for products, Accessories.Brand for parts, 'Third party' for modules bought elsewhere
   const brandOf=sku=>{ if(/^3P-/.test(sku)) return 'Third party'; if(/^TBD-/.test(sku)) return ''; const a=cat.Accessories.find(x=>x.Orderable_SKU===sku); return a?(a.Brand||'NETGEAR'):'NETGEAR'; };
   const add=(sku,desc,qty,catg,loc,note)=>{ if(!qty) return; let l=bom.find(b=>b.sku===sku&&b.loc===loc); if(!l){l={sku,desc,qty:0,cat:catg,loc,note:note||'',brand:brandOf(sku)}; bom.push(l);} l.qty+=qty; };
-  const locs=state.locations.map(L=>({...L,items:L.eps.map(x=>({ep:epById[x.ep],qty:x.qty})).filter(x=>x.ep)}));
+  // a device line can run in another connection mode (Endpoints Alt_Link_Speeds_Gbps / Reduced_PoE_W), e.g. a 10G AP on 2.5G and PoE+
+  const locs=state.locations.map(L=>({...L,items:L.eps.map(x=>({ep:epVariant(epById[x.ep],x.conn),qty:x.qty})).filter(x=>x.ep)}));
+  for(const L of locs) for(const it of L.items){ const e=it.ep; if(!e._base||!N(it.qty)) continue; const b=e._base, nm=`${N(it.qty)} × ${b.Name}`;
+    if(e._reduced) notes.push({lvl:'warn',msg:`${L.name}: ${nm} on ${b.Reduced_PoE_Label||'reduced PoE'}: ${b.Reduced_PoE_Note||'reduced performance'}.`});
+    if(e._speedCut) notes.push({lvl:N(e.Link_Speed_Gbps)<=1&&/wireless/i.test(b.Category||'')?'warn':'info',msg:`${L.name}: ${nm} on ${N(e.Link_Speed_Gbps)}G ports: backhaul limited to ${N(e.Link_Speed_Gbps)} Gbps (native ${N(b.Link_Speed_Gbps)}G).`}); }
   const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,CUM[k]]));
   const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik',quad:L.card==='quad'}; };
   const ovr=L=>L.override&&L.override!=='Auto'?L.override:null;
@@ -453,7 +475,7 @@ function designOnce(cat,state,upPref){
         head:b.psu.budget?((b.psu.budget-b.poeLoadUnit)/b.psu.budget):null,est:N(p.Power_Max_NoPoE_W)+b.poeLoadUnit/eff,max:N(p.Power_Max_FullPoE_W)||N(p.Power_Max_NoPoE_W),ru:N(p.Rack_Units),half:/Half/.test(p.Width_Class||'')});
       const units=splitUnits(g.items,b.n,S); if(b.up.u>0&&!standalone){ units.forEach(un=>{ coreDem.total+=un.bw; coreDem.maxSw=Math.max(coreDem.maxSw,un.bw); }); }
       accessNodes.push({loc:L.name,type:L.type,model:p.Model_Name,pid:p.Product_ID,n:b.n,ports:N(p.Total_Ports),units,group:g.label,up:b.up,alts:g.alts.map(a=>({pid:a.p.Product_ID,name:a.p.Model_Name,n:a.n}))});
-      for(const it of g.items){ const pid=it.ep.NETGEAR_Product_ID; if(pid&&N(it.qty)){ add(regionSku(cat,pid,S),it.ep.Name,N(it.qty),'Wireless',L.name); support(cat.Products.find(x=>x.Product_ID===pid),N(it.qty),L.name); } }
+      for(const it of g.items){ const pid=it.ep.NETGEAR_Product_ID; if(pid&&N(it.qty)){ add(regionSku(cat,pid,S),(it.ep._base||it.ep).Name,N(it.qty),'Wireless',L.name); support(cat.Products.find(x=>x.Product_ID===pid),N(it.qty),L.name); } }
     }
   }
   let core=null, gwOnCore=false, gateway=null; const mdfName=(locs.find(L=>L.type==='MDF')||{name:'MDF'}).name;
@@ -591,6 +613,6 @@ function validate(cat){
   for(const e of cat.Endpoints) if(!N(e.Link_Speed_Gbps)) warn(`Endpoint ${e.Name} has no link speed.`);
   return out;
 }
-return {design,demandOf,validate,settings,portTypes};
+return {epConnOptions,epVariant,design,demandOf,validate,settings,portTypes};
 })();
 if(typeof module!=='undefined') module.exports=ENG;

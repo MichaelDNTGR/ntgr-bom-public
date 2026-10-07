@@ -188,6 +188,17 @@ Designs are compared on cost. `Cost_Index` in Products and Accessories is a rela
 
 The engine builds the whole design with four uplink strategies (slowest speed, fewest links, fastest speed, cheapest links), tries each room's close alternatives, and keeps the cheapest complete design.
 
+### Device connection modes (e.g. WiFi 7 APs)
+
+Some devices can run in another connection mode, set per device line in a room (**Connection**). The Endpoints sheet defines them: `Alt_Link_Speeds_Gbps` (other port speeds) and `Reduced_PoE_W` / `Reduced_PoE_Label` / `Reduced_PoE_Note` (a lower PoE class and what it costs). The engine then sizes that line as the chosen mode: port speed, PoE class and budget, and bandwidth (capped at the port speed).
+
+| AP | Full performance | Other modes |
+|---|---|---|
+| WBE758 | 10G, PoE++ (802.3bt, 39 W) | 5G, 2.5G or 1G port (backhaul limited, radios unaffected); PoE+ (802.3at, 25.5 W) with reduced radios: -50% 2.4 GHz, -25% 5/6 GHz. 802.3af not supported |
+| WBE718 | 2.5G, PoE+ (802.3at, 25 W) | 1G port; PoE (802.3af, 12.95 W) with reduced radios: -50% 2.4 GHz, -25% 5 GHz, no 6 GHz |
+
+The default is full performance; the tool never downgrades a device on its own. Checks shows a warning for reduced power (and for 1G backhaul on an AP) and a note for any other lower port speed. The BoM still lists the normal AP part number.
+
 ### Neutrik etherCON rooms
 
 Each room has a **Connectors** setting: Default (RJ45 and LC fiber) or Neutrik (etherCON). Switches with Neutrik ports (today the M4350-16M4V: 8 etherCON front, 8 RJ45 rear, 16 × 2.5G PoE++, 1+1 internal PSUs) are only used in Neutrik rooms, and a Neutrik room only gets Neutrik switches. They are never used as a dedicated core. If a Neutrik room is too large for one model, the room shows an error suggesting a split or Default.

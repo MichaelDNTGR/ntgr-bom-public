@@ -23,7 +23,7 @@ flowchart LR
 ## What the user enters
 
 - **Rooms:** one main equipment room (MDF, holds the core) and any number of closets (IDF), each with fiber distance and type (multimode or single mode), and connectors: Default or Neutrik etherCON (M4350-16M4V) for live and touring racks, with an optional opticalCON QUAD uplink card.
-- **Devices per room:** for example 1G/10G AV-over-IP encoders and decoders, Dante audio, PTZ cameras, touch panels and NETGEAR WiFi 7 access points.
+- **Devices per room:** for example 1G/10G AV-over-IP encoders and decoders, Dante audio, PTZ cameras, touch panels and NETGEAR WiFi 7 access points. WiFi 7 APs have a **Connection** setting (for example a WBE758 on 2.5G and PoE+), with warnings when radios or backhaul are reduced.
 - **Options:** region (SKUs), mains voltage, TAA, redundant power (all switches or main room only), redundant core, switch series (best fit, M4250 or M4350), gateway, and a support contract: Sprint, Overdrive or Fastlane for 1, 3 or 5 years, offered only where the product lists that tier. Managed switches already include 3 years of Sprint.
 - **Design options:** line-rate or stream bandwidth, oversubscription, spare ports (10%), PoE headroom (20%), core-to-core link sizing.
 - **Saving:** "Save project" writes a `.ntgrbom` file that only the BoM builder opens ("Open saved project"). It is compressed and masked, not encrypted, and the tool refuses a file that was edited outside it. Older `.json` project files still open.

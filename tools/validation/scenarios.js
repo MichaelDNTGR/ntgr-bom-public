@@ -1,7 +1,7 @@
 // Validation scenarios for uplink / optic selection. `expect` is what a ProAV designer would want to see.
 const base = {region:'Americas',taa:false,psuRed:false,dualUplink:false,dualCore:false,basis:'line',oversub:1,spare:10,poeHead:20,
   voltage:110,gateway:false,support:'',priority:'best',family:'Auto',mdfPatch:3,coreOverride:'Auto',islRule:'half',psuScope:'all'};
-const L = (name, type, distance, media, eps) => ({id:name, name, type, distance, media, override:'Auto', eps:eps.map(([ep,qty])=>({ep,qty}))});
+const L = (name, type, distance, media, eps) => ({id:name, name, type, distance, media, override:'Auto', eps:eps.map(([ep,qty,conn])=>({ep,qty,...(conn?{conn}:{})}))});
 const MDF = (eps=[]) => L('Main equipment room','MDF',3,'MMF',eps);
 const S = (id, title, expect, project, locations, extraEndpoints=[]) => ({id, title, expect, project:{...base, name:`${id} ${title}`, ...project}, locations, extraEndpoints});
 // device types a scenario needs that are not in the catalog library
@@ -137,4 +137,10 @@ module.exports = [
   S('V43','25 x ST 2110 at FOH, transparent clock allowed',
     'Same FOH with "Transparent clock allowed": 2 x M4500-48XF8C (PTP transparent clock) instead of 4 x M4350-16V4C, with a warning that the datasheet lists ST 2110 on boundary-clock models only.',
     {spare:0, dualCore:true, psuRed:true, ptpMode:'tc'}, [MDF(), L('FOH','IDF',700,'SMF',[['EP-25G-2110',25]])]),
+  S('V44','12 WiFi 7 APs, full performance',
+    '12 x WBE758 on 10G PoE++ plus 8 decoders in one closet: a 10G PoE++ switch (M4350-24X8F8V class).',
+    {spare:0}, [MDF(), L('Closet 1','IDF',100,'MMF',[['EP-WBE758',12],['EP-1G-RX',8]])]),
+  S('V45','12 WiFi 7 APs on 2.5G and PoE+',
+    'Same closet with the AP connection set to 2.5G, PoE+: a cheaper 2.5G PoE switch, lower PoE budget, and warnings for reduced radios and 2.5G backhaul.',
+    {spare:0}, [MDF(), L('Closet 1','IDF',100,'MMF',[['EP-WBE758',12,'2.5|r'],['EP-1G-RX',8]])]),
 ];

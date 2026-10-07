@@ -58,5 +58,7 @@ Catalog 2026.10.01d, Design priority **Best design** (fewest switches and uplink
 | V41 | Long single-mode run, 500G closet | M4350-16C | 1× M4350-40X4C 2×100G; 2× M4350-40X4C 4×100G (+ third-party optics) | 547 | OK: 2 × M4350-40X4C on 100G LR4, not 5 half-empty 24X4V on 25G LR; Closet 1 at 150 m MMF gets a placeholder (use SMF) |
 | V42 | 25 × ST 2110 at FOH, boundary clock | 2 × M4350-16C | 4× M4350-16V4C 4×100G | 859 | OK: 8 devices per switch (2 × 100G to each core) |
 | V43 | 25 × ST 2110 at FOH, transparent clock allowed | 2 × M4350-16C | 2× M4500-48XF8C 8×100G | 841 | OK with warning: transparent clock, not advised by the datasheet |
+| V44 | 12 WiFi 7 APs, full performance | standalone | 1× M4350-24X8F8V | 211 | OK: 10G PoE++ switch, PoE 572 W |
+| V45 | 12 WiFi 7 APs on 2.5G and PoE+ | standalone | 1× M4350-24M4X4V | 185 | OK: 2.5G PoE switch, PoE 410 W, warnings for reduced radios and 2.5G backhaul |
 
 V06, V12, V18, V34, V36 and V41 depend most on the estimated third-party optic costs.
