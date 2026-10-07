@@ -56,6 +56,10 @@ Example: 16 × 1G encoders + 8 × Dante devices on one switch
 
 - **Core-to-core link** is sized from total traffic: busiest switch (failover), half of all traffic (default) or all traffic. Example: four closets of 40 Gbps each need 100 Gbps between cores, so 4 × 25G.
 
+## Pro AV Design mode
+
+Open the page with `?mode=proav` (for example `index.html?mode=proav`) for the NETGEAR Pro AV Design team: exports (PDF, diagram, CSV, Excel, design summary) carry no "not validated" marking, and team-mode controls are shown. The mode never marks a design as validated; that stays with the admin flow. It is a simple switch, not access control: anyone with the URL can use it.
+
 ## Validation and catalog tools
 
 - [Validation runs](docs/examples/validation/README.md): 30 test designs with the result, verdict and PDF report for each. Rerun with `node tools/validation/run.js` after any catalog or engine change.
