@@ -26,11 +26,14 @@ const save=()=>{ try{ localStorage.setItem('ntgr-bom-v2',JSON.stringify(state));
 const QS=(()=>{ try{ return new URLSearchParams(location.search); }catch(e){ return new URLSearchParams(''); } })();
 const PROAV=QS.get('mode')==='proav';
 if(PROAV) canTeam=true;
-const PREP=(()=>{ const n=String(QS.get('by')||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60), e=String(QS.get('email')||'').trim().slice(0,80);
-  return {name:n,email:/^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(e)?e:''}; })();
+// &rep=<name>&repemail=<address>: the sales rep for pricing and availability (defaults to the preparer)
+const person=(nk,ek)=>{ const n=String(QS.get(nk)||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60), e=String(QS.get(ek)||'').trim().slice(0,80);
+  return {name:n,email:/^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(e)?e:''}; };
+const PREP=person('by','email'), REP=person('rep','repemail');
 const PROAV_TITLE='DESIGN PROPOSAL';
-const prepContact=()=>PREP.name&&PREP.email?`${PREP.name} at ${PREP.email}`:(PREP.email||PREP.name||`the NETGEAR Pro AV Design team at ${MAIL()}`);
-const proavNote=()=>`Prepared by ${PREP.name?`${PREP.name}${PREP.email?` (${PREP.email})`:''}, NETGEAR Pro AV Design team`:'the NETGEAR Pro AV Design team'}, based on the requirements provided. Endpoints, quantities and cable distances must be confirmed before ordering. For pricing and availability, contact ${prepContact()}.`;
+const contactOf=p=>p.name&&p.email?`${p.name} at ${p.email}`:(p.email||p.name);
+const prepContact=()=>contactOf(REP.name||REP.email?REP:PREP)||`the NETGEAR Pro AV Design team at ${MAIL()}`;
+const proavNote=()=>`Prepared by ${PREP.name||PREP.email?`${PREP.name||PREP.email}${PREP.name&&PREP.email?` (${PREP.email})`:''}`:'the NETGEAR Pro AV Design team'}, design is based on the requirements provided. For pricing and availability, contact ${prepContact()}.`;
 const proavShort=()=>`NETGEAR Pro AV design proposal${PREP.name?`, prepared by ${PREP.name}`:''}`;
 const priceLine=()=>PROAV?`For pricing and availability, contact ${prepContact()}.`:'Pricing and availability are provided by NETGEAR or your distributor after validation.';
 const team=()=>canTeam; // editors see advanced controls inline; admin tools live on the admin page
@@ -190,7 +193,7 @@ function roomPower(l){ const V=state.project.voltage, r=result.power.filter(p=>p
 function stats(){ return {sw:result.bom.filter(b=>b.cat==='Switches').reduce((s,b)=>s+b.qty,0),eps:result.totalEps,poe:result.power.reduce((s,p)=>s+p.poe*p.n,0),est:result.power.reduce((s,p)=>s+p.est*p.n,0),ru:result.power.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0)}; }
 function renderResults(){
   const s=stats(), T=result.settings;
-  if(PROAV) $('#disc').innerHTML=`<div><b>Pro AV Design mode.</b> Exports are design proposals${PREP.name?` prepared by ${esc(PREP.name)}${PREP.email?` (${esc(PREP.email)})`:''}`:''}, without a "not validated" marking. Use it only for designs your team has reviewed.${PREP.name&&PREP.email?'':' Add &amp;by=Your%20Name&amp;email=you@netgear.com to the URL to name the preparer.'}</div>`; else
+  if(PROAV) $('#disc').innerHTML=`<div><b>Pro AV Design mode.</b> Exports are design proposals${PREP.name?` prepared by ${esc(PREP.name)}${PREP.email?` (${esc(PREP.email)})`:''}`:''}, without a "not validated" marking. Use it only for designs your team has reviewed.${PREP.name&&PREP.email?'':' Add &amp;by=Your%20Name&amp;email=you@netgear.com to the URL to name the preparer.'}${REP.name||REP.email?` Pricing contact: ${esc(contactOf(REP))}.`:' Add &amp;rep=Name&amp;repemail=rep@netgear.com for the sales rep.'}</div>`; else
   $('#disc').innerHTML=`<div><b>Estimate for planning only.</b> ${esc(T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the ProAV Design team before ordering.')}<br>Please click <b>Request validation</b> to download the design file.</div><button class="btn" data-act="request">Request validation</button>`;
   $('#stats').innerHTML=`<div><b>${fmt(s.eps)}</b><span>devices</span></div><div><b>${fmt(s.sw)}</b><span>switches</span></div><div><b>${fmt(s.poe)} W</b><span>PoE load</span></div><div><b>${fmt(s.est/1000,1)} kW</b><span>estimated power</span></div><div><b>${fmt(s.ru,1)} U</b><span>rack space</span></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));
@@ -654,7 +657,7 @@ async function buildPdf(v={}){
   // key figures along the bottom
   const tiles=[[fmt(s.eps),'DEVICES'],[fmt(s.sw),'SWITCHES'],[fmt(s.poe)+' W','POE LOAD'],[fmt(s.est/1000,1)+' kW','EST. POWER'],[fmt(s.ru,1)+' U','RACK SPACE']], tg=6, tw=(pw()-2*M-16-tg*4)/5, ty=ph()-M-70;
   tiles.forEach(([val,l],i)=>{ const x=M+8+i*(tw+tg); doc.setFillColor(...G6); doc.roundedRect(x,ty,tw,52,6,6,'F'); font('bold',16,WH); doc.text(val,x+10,ty+25); font('normal',7,G4); doc.text(l,x+10,ty+40,{charSpace:0.5}); });
-  font('normal',7.5,G4); doc.text('Generated by the NETGEAR AV BoM builder',M+8,ph()-M+8);
+  if(!PROAV){ font('normal',7.5,G4); doc.text('Generated by the NETGEAR AV BoM builder',M+8,ph()-M+8); }
 
   // --- page 2: NETGEAR AV introduction (copy from NETGEAR AV Overview, Apr 2026; see AV_OFFER) ---
   doc.addPage(fmtName,'portrait'); y=M+16;
