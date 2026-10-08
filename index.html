@@ -844,7 +844,8 @@ const person=(nk,ek)=>{ const n=String(QS.get(nk)||'').replace(/[<>"&]/g,'').rep
 const PREP=person('by','email'), REP=person('rep','repemail');
 const PROAV_TITLE='DESIGN PROPOSAL';
 const contactOf=p=>p.name&&p.email?`${p.name} at ${p.email}`:(p.email||p.name);
-const prepContact=()=>contactOf(REP.name||REP.email?REP:PREP)||`the NETGEAR Pro AV Design team at ${MAIL()}`;
+// pricing goes to the sales rep from the URL; without one, to the customer's NETGEAR sales representative (never the preparer)
+const prepContact=()=>contactOf(REP)||'your NETGEAR sales representative';
 const proavNote=()=>`Prepared by ${PREP.name||PREP.email?`${PREP.name||PREP.email}${PREP.name&&PREP.email?` (${PREP.email})`:''}`:'the NETGEAR Pro AV Design team'}, design is based on the requirements provided. For pricing and availability, contact ${prepContact()}.`;
 const proavShort=()=>`NETGEAR Pro AV design proposal${PREP.name?`, prepared by ${PREP.name}`:''}`;
 const priceLine=()=>PROAV?`For pricing and availability, contact ${prepContact()}.`:'Pricing and availability are provided by NETGEAR or your distributor after validation.';
