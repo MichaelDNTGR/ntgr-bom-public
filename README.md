@@ -62,10 +62,10 @@ Open the page with `?mode=proav` for the NETGEAR Pro AV Design team. Exports (PD
 
 | Variable | Meaning |
 |---|---|
-| `by`, `email` | Preparer: "Prepared by Name (email), design is based on the requirements provided." |
-| `rep`, `repemail` | Sales rep for pricing and availability: "For pricing and availability, contact Name at email." Without it: "contact your NETGEAR sales representative". |
+| `by`, `email`, `bytitle` | Preparer: "Prepared by Name, Title (email), based on the requirements provided." |
+| `rep`, `repemail` | Sales contact: "For sales questions, contact Name (email); orders, pricing and availability through your NETGEAR distributor." Without a rep: "Orders, pricing and availability through your NETGEAR distributor." |
 
-Example: `index.html?mode=proav&by=Michael%20Dijk&email=mdijk@netgear.com&rep=Jane%20Smith&repemail=jsmith@netgear.com` The mode never marks a design as validated; that stays with the admin flow. It is a simple switch, not access control: anyone with the URL can use it.
+Example: `index.html?mode=proav&by=Michael%20Dijk&email=mdijk@netgear.com&bytitle=Staff%20Systems%20Engineer&rep=Chris%20Burnett&repemail=chris.burnett@netgear.com`
 
 ## Validation and catalog tools
 

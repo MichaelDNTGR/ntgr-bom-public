@@ -30,13 +30,17 @@ if(PROAV) canTeam=true;
 const person=(nk,ek)=>{ const n=String(QS.get(nk)||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60), e=String(QS.get(ek)||'').trim().slice(0,80);
   return {name:n,email:/^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(e)?e:''}; };
 const PREP=person('by','email'), REP=person('rep','repemail');
+PREP.title=String(QS.get('bytitle')||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60); // &bytitle=<job title of the preparer>
 const PROAV_TITLE='DESIGN PROPOSAL';
 const contactOf=p=>p.name&&p.email?`${p.name} at ${p.email}`:(p.email||p.name);
-// pricing goes to the sales rep from the URL; without one, to the customer's NETGEAR sales representative (never the preparer)
-const prepContact=()=>contactOf(REP)||'your NETGEAR sales representative';
-const proavNote=()=>`Prepared by ${PREP.name||PREP.email?`${PREP.name||PREP.email}${PREP.name&&PREP.email?` (${PREP.email})`:''}`:'the NETGEAR Pro AV Design team'}, design is based on the requirements provided. For pricing and availability, contact ${prepContact()}.`;
+// sales questions go to the rep from the URL; orders, pricing and availability always go through distribution
+const repRef=()=>REP.name&&REP.email?`${REP.name} (${REP.email})`:(REP.name||REP.email);
+const prepContact=()=>repRef()||'your NETGEAR sales representative';
+const salesLine=()=>repRef()?`For sales questions, contact ${repRef()}; orders, pricing and availability through your NETGEAR distributor.`:'Orders, pricing and availability through your NETGEAR distributor.';
+const preparer=()=>PREP.name||PREP.email?`${PREP.name||PREP.email}${PREP.name&&PREP.title?`, ${PREP.title}`:''}${PREP.name&&PREP.email?` (${PREP.email})`:''}`:'the NETGEAR Pro AV Design team';
+const proavNote=()=>`Prepared by ${preparer()}, based on the requirements provided. ${salesLine()}`;
 const proavShort=()=>`NETGEAR Pro AV design proposal${PREP.name?`, prepared by ${PREP.name}`:''}`;
-const priceLine=()=>PROAV?`For pricing and availability, contact ${prepContact()}.`:'Pricing and availability are provided by NETGEAR or your distributor after validation.';
+const priceLine=()=>PROAV?salesLine():'Pricing and availability are provided by NETGEAR or your distributor after validation.';
 const team=()=>canTeam; // editors see advanced controls inline; admin tools live on the admin page
 
 function swOpts(sel){ return `<option value="Auto"${sel==='Auto'?' selected':''}>Automatic</option>`+CAT.Products.filter(p=>p.Category==='Switch').map(p=>`<option value="${esc(p.Product_ID)}"${sel===p.Product_ID?' selected':''}>${esc(p.Model_Name)}</option>`).join(''); }
@@ -194,7 +198,7 @@ function roomPower(l){ const V=state.project.voltage, r=result.power.filter(p=>p
 function stats(){ return {sw:result.bom.filter(b=>b.cat==='Switches').reduce((s,b)=>s+b.qty,0),eps:result.totalEps,poe:result.power.reduce((s,p)=>s+p.poe*p.n,0),est:result.power.reduce((s,p)=>s+p.est*p.n,0),ru:result.power.reduce((s,p)=>s+(p.half?p.ru/2:p.ru)*p.n,0)}; }
 function renderResults(){
   const s=stats(), T=result.settings;
-  if(PROAV) $('#disc').innerHTML=`<div><b>Pro AV Design mode.</b> Exports are design proposals${PREP.name?` prepared by ${esc(PREP.name)}${PREP.email?` (${esc(PREP.email)})`:''}`:''}, without a "not validated" marking. Use it only for designs your team has reviewed.${PREP.name&&PREP.email?'':' Add &amp;by=Your%20Name&amp;email=you@netgear.com to the URL to name the preparer.'}${REP.name||REP.email?` Pricing contact: ${esc(contactOf(REP))}.`:' Add &amp;rep=Name&amp;repemail=rep@netgear.com for the sales rep.'}</div>`; else
+  if(PROAV) $('#disc').innerHTML=`<div><b>Pro AV Design mode.</b> Exports are design proposals${PREP.name?` prepared by ${esc(PREP.name)}${PREP.email?` (${esc(PREP.email)})`:''}`:''}, without a "not validated" marking. Use it only for designs your team has reviewed.${PREP.name&&PREP.email?'':' Add &amp;by=Your%20Name&amp;email=you@netgear.com to the URL to name the preparer.'}${REP.name||REP.email?` Sales contact: ${esc(repRef())}.`:' Add &amp;rep=Name&amp;repemail=rep@netgear.com for the sales contact.'}</div>`; else
   $('#disc').innerHTML=`<div><b>Estimate for planning only.</b> ${esc(T.Disclaimer||'This bill of materials is generated automatically as a budgetary estimate. It must be validated by the ProAV Design team before ordering.')}<br>Please click <b>Request validation</b> to download the design file.</div><button class="btn" data-act="request">Request validation</button>`;
   $('#stats').innerHTML=`<div><b>${fmt(s.eps)}</b><span>devices</span></div><div><b>${fmt(s.sw)}</b><span>switches</span></div><div><b>${fmt(s.poe)} W</b><span>PoE load</span></div><div><b>${fmt(s.est/1000,1)} kW</b><span>estimated power</span></div><div><b>${fmt(s.ru,1)} U</b><span>rack space</span></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));
@@ -552,7 +556,7 @@ async function saveFile(name,data){
   try{ browserDownload(name,data); }
   catch(e){ console.error('Download failed',e); toast('Could not save the file.'); }
 }
-const discRow=()=>[[PROAV?proavNote():'ESTIMATE ONLY: '+(result.settings.Disclaimer||'')],[PROAV?'Contact: '+prepContact():'Validation: '+(result.settings.Validation_Contact_Email||'')],['Catalog version: '+CATMETA.version],[]];
+const discRow=()=>[[PROAV?proavNote():'ESTIMATE ONLY: '+(result.settings.Disclaimer||'')],[PROAV?'Sales contact: '+prepContact()+'. Orders, pricing and availability through your NETGEAR distributor.':'Validation: '+(result.settings.Validation_Contact_Email||'')],['Catalog version: '+CATMETA.version],[]];
 function exportCsv(){ const rows=[...discRow(),['Category','Part number','Brand','Description','Qty','Where'],...rollup().map(r=>[r.cat,r.sku,r.brand||'',r.desc,r.qty,[...r.locs].join('; ')])];
   track('bom'); saveFile(`${slug()}-bom.csv`,rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n')); }
 function exportSvg(){ saveFile(`${slug()}-network.svg`,diagram(true)); track('diagram'); }
