@@ -63,9 +63,9 @@ Open the page with `?mode=proav` for the NETGEAR Pro AV Design team. Exports (PD
 | Variable | Meaning |
 |---|---|
 | `by`, `email`, `bytitle` | Preparer: "Prepared by Name, Title (email), based on the requirements provided." |
-| `rep`, `repemail` | Sales contact: "For sales questions, contact Name (email); orders, pricing and availability through your NETGEAR distributor." Without a rep: "Orders, pricing and availability through your NETGEAR distributor." |
+| `rep`, `repemail`, `reptitle` | Sales contact: "For sales questions, contact Name, Title (email); orders, pricing and availability through your NETGEAR distributor." Without a rep: "Orders, pricing and availability through your NETGEAR distributor." |
 
-Example: `index.html?mode=proav&by=Michael%20Dijk&email=mdijk@netgear.com&bytitle=Staff%20Systems%20Engineer&rep=Chris%20Burnett&repemail=chris.burnett@netgear.com`
+Example: `index.html?mode=proav&by=Michael%20Dijk&email=mdijk@netgear.com&bytitle=Staff%20Systems%20Engineer&rep=Chris%20Burnett&repemail=chris.burnett@netgear.com&reptitle=Pro%20AV%20Territory%20Manager%2C%20Southeast`
 
 ## Validation and catalog tools
 

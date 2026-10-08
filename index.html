@@ -842,11 +842,12 @@ if(PROAV) canTeam=true;
 const person=(nk,ek)=>{ const n=String(QS.get(nk)||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60), e=String(QS.get(ek)||'').trim().slice(0,80);
   return {name:n,email:/^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(e)?e:''}; };
 const PREP=person('by','email'), REP=person('rep','repemail');
-PREP.title=String(QS.get('bytitle')||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60); // &bytitle=<job title of the preparer>
+const titleOf=k=>String(QS.get(k)||'').replace(/[<>"&]/g,'').replace(/\s+/g,' ').trim().slice(0,60);
+PREP.title=titleOf('bytitle'); REP.title=titleOf('reptitle'); // &bytitle= / &reptitle=: job titles
 const PROAV_TITLE='DESIGN PROPOSAL';
 const contactOf=p=>p.name&&p.email?`${p.name} at ${p.email}`:(p.email||p.name);
 // sales questions go to the rep from the URL; orders, pricing and availability always go through distribution
-const repRef=()=>REP.name&&REP.email?`${REP.name} (${REP.email})`:(REP.name||REP.email);
+const repRef=()=>REP.name||REP.email?`${REP.name||REP.email}${REP.name&&REP.title?`, ${REP.title}`:''}${REP.name&&REP.email?` (${REP.email})`:''}`:'';
 const prepContact=()=>repRef()||'your NETGEAR sales representative';
 const salesLine=()=>repRef()?`For sales questions, contact ${repRef()}; orders, pricing and availability through your NETGEAR distributor.`:'Orders, pricing and availability through your NETGEAR distributor.';
 const preparer=()=>PREP.name||PREP.email?`${PREP.name||PREP.email}${PREP.name&&PREP.title?`, ${PREP.title}`:''}${PREP.name&&PREP.email?` (${PREP.email})`:''}`:'the NETGEAR Pro AV Design team';
