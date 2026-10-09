@@ -32,7 +32,7 @@ flowchart LR
 
 - **Each device needs the right port:** matching speed (1G, 2.5G, 10G, 25G), copper or fiber, and PoE type. A faster port can take a slower device; a 10G copper device without PoE can use an SFP+ port with a 10GBASE-T module (AXM765), but only as a fallback: switches with native copper ports are preferred. Spare ports (10%) are added to the port count, not to the PoE ports.
 - **Every eligible switch is tested at 1, 2, 3... units** until it passes all checks: ports, PoE ports and class, PoE budget, and enough fiber ports left for uplinks. Eligible means active, in the chosen series, and TAA-compliant when TAA is on.
-- **The best fit wins:** the lowest cost when list prices are in the catalog; otherwise the smallest design that passes, with penalties for extra PSU modules and optics not yet in the catalog. Close alternatives are shown as "Also fits".
+- **The best fit wins:** the lowest cost when list prices are in the catalog; otherwise the smallest design that passes, with penalties for extra PSU modules and optics not yet in the catalog. In team and Pro AV mode, each room and the core have a selection box: Automatic (best design), the other models that fit, and all other switches. The list stays after a choice, so you can switch back and forth.
 - **Mixed rooms are split** when one model cannot serve every device, for example M4250 for 1G devices and M4350 for 10G PoE++ access points.
 - **Devices are spread evenly** across a room's switches, and each switch shows its own devices and bandwidth.
 

@@ -100,7 +100,7 @@ flowchart TD
     TP -- Yes --> SC
     TP -- No --> M["Keep as fallback with placeholder<br/>and try up to 3 more units"]
     M --> SC
-    SC --> R["Lowest score wins<br/>next best shown as Also fits"]
+    SC --> R["Lowest score wins<br/>other fits listed in the room selection"]
 ```
 
 ### Port check
@@ -261,7 +261,7 @@ Example: 7 Dante devices in the main room and 7 in a closet, stream bandwidth: t
 Room switches and the core are scored together, because a room's cheapest switch can force a bigger core.
 
 1. The whole design is built four times, with room uplinks on the **slowest** speed that fits, the **fewest** links, the **fastest** speed (each uplink also counts the core port it uses, so this one wins when core ports run out), and the **cheapest** links. With Design priority **Best design** (default), extra switches and uplinks weigh heavily, so the simplest design wins; with **Lowest cost** (internal), the lowest total cost wins. Near-ties keep the slower uplinks.
-2. For each room with one switch group, the engine then tries the room's next three "Also fits" switches on the whole design, and keeps any that lowers the total, so a room's cheapest switch cannot force an expensive core.
+2. For each room with one switch group, the engine then tries the next three switches that fit the room on the whole design, and keeps any that lowers the total, so a room's cheapest switch cannot force an expensive core.
 3. If no strategy finds a core, the engine shows an error suggesting 2:1 oversubscription, Best fit, or an aggregation layer.
 
 ## 4. Building the BoM

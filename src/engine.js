@@ -185,7 +185,7 @@ function bestFor(cat,PT,D,S,ctx,forced){
       if(!tbd) tbd=r; else if(n>tbd.n+2) break; }
     if(tbd) keep(tbd); }
   alts.sort((a,b)=>a.score-b.score);
-  return best?{best,alts:alts.slice(0,4)}:null;
+  return best?{best,alts:alts.slice(0,8)}:null;
 }
 function demandOf(items,S,noSpare){
   const D={classes:[],poeAt:0,poeBt:0,poeW:0,bw:0,count:0}, map={};
@@ -205,9 +205,11 @@ function demandOf(items,S,noSpare){
 function poolKey(it){ const f=/fiber/i.test(it.ep.Media||''), s=N(it.ep.Link_Speed_Gbps); return f?'Fiber endpoints':(s>2.5?'Multi-gig copper endpoints':'1G / 2.5G copper endpoints'); }
 function solveLocation(cat,PT,items,S,ctx,forced){
   const nz=items.filter(i=>N(i.qty)>0&&i.ep);
-  if(!nz.length) return {groups:[],err:null};
+  if(!nz.length) return {groups:[],err:null,fits:[]};
   const opts=[];
   const whole=bestFor(cat,PT,demandOf(nz,S),S,ctx,forced);
+  // models that fit the whole room in the open search, so a fixed room can still offer every alternative
+  const open=forced?(ctx.noFits?null:bestFor(cat,PT,demandOf(nz,S),S,ctx)):whole, fits=open?open.alts:[];
   if(whole) opts.push({groups:[{label:'All endpoints',items:nz,...whole}],score:whole.best.score});
   if(!forced){
     const pools={}; nz.forEach(i=>(pools[poolKey(i)]=pools[poolKey(i)]||[]).push(i));
@@ -218,8 +220,8 @@ function solveLocation(cat,PT,items,S,ctx,forced){
       for(const x of part){ const r=bestFor(cat,PT,demandOf(x,S),S,ctx); if(!r){ok=false;break;} gs.push({label:x.map(poolKey).filter((v,i,a)=>a.indexOf(v)===i).join(' + '),items:x,...r}); sc+=r.best.score; }
       if(ok) opts.push({groups:gs,score:sc}); }
   }
-  if(!opts.length) return {groups:[],err:forced?`The selected switch cannot serve this endpoint mix with the current settings.`:(ctx.neutrik?'No Neutrik etherCON switch fits this room. The M4350-16M4V has 16 x 2.5G PoE++ ports (8 etherCON) and 4 x 25G uplinks; split the devices over more rooms, or set Connectors to Standard RJ45.':noFitMsg(S,nz))};
-  opts.sort((a,b)=>a.score-b.score); return {groups:opts[0].groups,err:null};
+  if(!opts.length) return {groups:[],fits,err:forced?`The selected switch cannot serve this endpoint mix with the current settings.`:(ctx.neutrik?'No Neutrik etherCON switch fits this room. The M4350-16M4V has 16 x 2.5G PoE++ ports (8 etherCON) and 4 x 25G uplinks; split the devices over more rooms, or set Connectors to Standard RJ45.':noFitMsg(S,nz))};
+  opts.sort((a,b)=>a.score-b.score); return {groups:opts[0].groups,err:null,fits};
 }
 function noFitMsg(S,items){
   const h=[];
@@ -241,7 +243,7 @@ function islRequired(dem,S){
 function solveCore(cat,PT,dem,S,forced){
   const list=(forced?cat.Products.filter(p=>p.Product_ID===forced):candidates(cat,S,'core').filter(p=>!isNeutrik(p)&&PT.some(t=>t.up&&t.media==='Fiber'&&N(p[t.col])>0)))
     .filter(p=>timingOk(p,dem,S)&&!(dem.needAVB&&avbNoLag(p)&&dem.lagged));
-  const cores=S.dualCore?2:1; let best=null, psuFail=false;
+  const cores=S.dualCore?2:1; let best=null, psuFail=false; const fits=[];
   const speeds=Object.keys(dem.links).map(Number).sort((a,b)=>b-a);
   for(const p of list){
     const ups=PT.filter(t=>t.up&&N(p[t.col])>0);
@@ -271,11 +273,13 @@ function solveCore(cat,PT,dem,S,forced){
       const linkSpeeds=[...speeds,...(dem.gw?[10]:[]),...(islSpeed?[islSpeed]:[])];
       const wasted=PT.filter(t=>N(p[t.col])>0&&!(t.up&&linkSpeeds.some(s=>supports(t,s)))).reduce((a,t)=>a+N(p[t.col]),0);
       const sc=k*(scoreUnit(cat,p,psu)+wasted*0.5);
+      fits.push({p,k,score:sc});
       if(!best||sc<best.score) best={p,k,psu,islSpeed,isl,islReq,score:sc};
       break;
     }
   }
-  return best||(psuFail?{fail:'psu'}:null);
+  fits.sort((a,b)=>a.score-b.score);
+  return best?{...best,fits}:(psuFail?{fail:'psu',fits}:null);
 }
 // module types that reach further than the catalog parts; these must come from a third party and be confirmed with NETGEAR
 function thirdParty(speed,media,dist){
@@ -383,14 +387,14 @@ function designBy(cat,state){
     if(L.override&&L.override!=='Auto') continue;
     const nodes=best.accessNodes.filter(a=>a.loc===L.name); if(nodes.length!==1) continue;
     for(const a of nodes[0].alts.filter(a=>a.pid!==nodes[0].pid).slice(0,3)){
-      const st={...cur,locations:cur.locations.map(x=>(x.id??x.name)===(L.id??L.name)?{...x,override:a.pid}:x)};
+      const st={...cur,locations:cur.locations.map(x=>(x.id??x.name)===(L.id??L.name)?{...x,override:a.pid,_trial:true}:x)};
       const r=designOnce(cat,st,w.p);
       if(!r.errors.length&&r.score<best.score-0.5){ best=r; cur=st; }
     }
   }
   if(best!==w.r){
-    // keep the "Also fits" list from the open search; a forced room only lists itself
-    best.accessNodes.forEach(a=>{ const o=w.r.accessNodes.find(x=>x.loc===a.loc); if(o) a.alts=o.alts; });
+    // keep the room options from the open search; a room the engine tried a model on only lists itself
+    best.accessNodes.forEach(a=>{ const o=w.r.accessNodes.find(x=>x.loc===a.loc); if(o) a.alts=o.alts; }); best.roomOptions=w.r.roomOptions;
     best.notes=[...w.r.notes.filter(n=>/faster uplinks/i.test(n.msg)),...best.notes.filter(n=>!/faster uplinks/i.test(n.msg))]; best.notes.unshift({lvl:'info',msg:'A different room switch was chosen where it allows a smaller core, so the whole design costs less.'}); }
   best.strategy=w.p; return best;
 }
@@ -431,7 +435,7 @@ function designOnce(cat,state,upPref){
     if(e._reduced) notes.push({lvl:'warn',msg:`${L.name}: ${nm} on ${b.Reduced_PoE_Label||'reduced PoE'}: ${b.Reduced_PoE_Note||'reduced performance'}.`});
     if(e._speedCut) notes.push({lvl:N(e.Link_Speed_Gbps)<=1&&/wireless/i.test(b.Category||'')?'warn':'info',msg:`${L.name}: ${nm} on ${N(e.Link_Speed_Gbps)}G ports: backhaul limited to ${N(e.Link_Speed_Gbps)} Gbps (native ${N(b.Link_Speed_Gbps)}G).`}); }
   const CUM=copperModules(cat), cuMods=Object.fromEntries(Object.keys(CUM).map(k=>[k,CUM[k]]));
-  const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik',quad:L.card==='quad'}; };
+  const ctxFor=(L,standalone)=>{ const mdf=L.type==='MDF', dist=mdf?N(S.mdfPatch):N(L.distance); return {standalone,media:L.media||'MMF',dist,inRack:mdf&&dist<=inRackMax,cuMods,neutrik:L.conn==='neutrik',quad:L.card==='quad',noFits:!!L._trial}; };
   const ovr=L=>L.override&&L.override!=='Auto'?L.override:null;
   let standalone=false;
   // redundant power can apply everywhere or only in the main equipment room (MDF + core)
@@ -481,7 +485,7 @@ function designOnce(cat,state,upPref){
       for(const it of g.items){ const pid=it.ep.NETGEAR_Product_ID; if(pid&&N(it.qty)){ add(regionSku(cat,pid,S),(it.ep._base||it.ep).Name,N(it.qty),'Wireless',L.name); support(cat.Products.find(x=>x.Product_ID===pid),N(it.qty),L.name); } }
     }
   }
-  let core=null, gwOnCore=false, gateway=null; const mdfName=(locs.find(L=>L.type==='MDF')||{name:'MDF'}).name;
+  let core=null, gwOnCore=false, gateway=null, coreFits=[]; const mdfName=(locs.find(L=>L.type==='MDF')||{name:'MDF'}).name;
   if(!standalone && units>0 && !errors.length){
     const forcedCore=S.coreOverride&&S.coreOverride!=='Auto'?S.coreOverride:null;
     // collapsed core: one main-room switch with free ports for every closet link is the core itself (no extra switch)
@@ -499,10 +503,14 @@ function designOnce(cat,state,upPref){
       const an=accessNodes.find(a=>a.loc===mr.L.name); an.up={speed:0,u:0}; an.coreLinks=others.reduce((a,u)=>a+u.b.up.u*u.b.n,0); an.isCore=true;
       return {p,k:1,psu:b.psu,isl:0,score:0,collapsed:true,loc:mr.L.name};
     };
+    const dem0={...coreDem,links:{...coreDem.links}}; // before a collapsed core takes the main room's links
     core=collapse();
     if(!core){ core=solveCore(cat,PT,coreDem,S,forcedCore); gwOnCore=!!(core&&core.p);
       // the router can also sit on a room switch, so a core without a spare 10G port still works
       if(S.gateway&&!(core&&core.p)){ const c2=solveCore(cat,PT,{...coreDem,gw:false},S,forcedCore); if(c2&&c2.p){ core=c2; gwOnCore=false; } } }
+    // core models that fit in the open search, for the core selection (also when the core is fixed or collapsed)
+    if(core&&core.fits&&!forcedCore) coreFits=core.fits;
+    else { const o=solveCore(cat,PT,dem0,S,null); coreFits=o&&o.fits&&o.fits.length?o.fits:(((S.gateway&&solveCore(cat,PT,{...dem0,gw:false},S,null))||{}).fits||[]); }
     if(core&&core.collapsed) notes.push({lvl:'info',msg:`The ${core.p.Model_Name} in ${core.loc} is also the core: the other rooms connect to its free ports, so no separate core switch is needed.`});
     else if(core&&core.fail==='psu'){ errors.push({loc:'Core',msg:`${forcedCore?cat.Products.find(p=>p.Product_ID===forcedCore).Model_Name+' has':'The core switches that fit have'} a single fixed power supply, so ${forcedCore?'it':'they'} cannot be used with redundant power on. Choose a core with a PSU module slot, or turn off redundant power.`}); core=null; }
     else if(core){ const p=core.p, loc=mdfName+' (core)'; score+=core.score;
@@ -599,7 +607,10 @@ function designOnce(cat,state,upPref){
   // what plugs into each core: room uplinks, core-to-core links, gateway (first core only)
   if(core&&core.p&&core.isl){ const lk=bom.find(b=>b.loc===coreLoc&&/Inter-core/.test(b.note)); corePorts.push({loc:core.k>1?'Other core':'',speed:core.islSpeed,perCore:core.isl,sku:lk?lk.sku:'',kind:'cable',isl:true}); }
   if(core&&core.p) core.ports=corePorts;
-  return {dualCore:!!S.dualCore,bom,links,power,notes,errors,core,accessNodes,standalone,totalEps,settings:T,score,gateway};
+  // per room (same order as state.locations) and for the core: the models that fit, best first
+  const roomOptions=locs.map(L=>{ const r=res.find(x=>x.L===L); return ((r&&r.fits)||[]).map(a=>({pid:a.p.Product_ID,name:a.p.Model_Name,n:a.n,speed:a.up.speed,u:a.up.u,tp:!!a.up.tp,tbd:!!a.up.tbd&&!a.up.tp})); });
+  const coreOptions=coreFits.slice(0,8).map(c=>({pid:c.p.Product_ID,name:c.p.Model_Name,n:c.k}));
+  return {dualCore:!!S.dualCore,bom,links,power,notes,errors,core,accessNodes,standalone,totalEps,settings:T,score,gateway,roomOptions,coreOptions};
 }
 // catalog validation used before publishing a new catalog
 function validate(cat){

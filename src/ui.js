@@ -44,7 +44,14 @@ const proavShort=()=>`NETGEAR Pro AV design proposal${PREP.name?`, prepared by $
 const priceLine=()=>PROAV?salesLine():'Pricing and availability are provided by NETGEAR or your distributor after validation.';
 const team=()=>canTeam; // editors see advanced controls inline; admin tools live on the admin page
 
-function swOpts(sel){ return `<option value="Auto"${sel==='Auto'?' selected':''}>Automatic</option>`+CAT.Products.filter(p=>p.Category==='Switch').map(p=>`<option value="${esc(p.Product_ID)}"${sel===p.Product_ID?' selected':''}>${esc(p.Model_Name)}</option>`).join(''); }
+// switch selection: Automatic, the models that fit (from the open search, so every option stays available), then the rest
+function fitOpts(sel,fits,label){
+  const ids=new Set(fits.map(f=>f.pid)), o=(v,t)=>`<option value="${esc(v)}"${sel===v?' selected':''}>${esc(t)}</option>`;
+  const rest=CAT.Products.filter(p=>p.Category==='Switch'&&!ids.has(p.Product_ID));
+  return o('Auto','Automatic (best design)')
+    +(fits.length?`<optgroup label="${label}">${fits.map(f=>o(f.pid,`${f.name} × ${f.n}${f.u?(state.project.dualCore?`, ${f.u/2} × ${f.speed}G to each core`:`, ${f.u} × ${f.speed}G uplinks`)+(f.n>1?', per switch':''):''}${f.tp?' (third-party optics)':f.tbd?' (no optic in catalog)':''}`)).join('')}</optgroup>`:'')
+    +`<optgroup label="${fits.length?'Other switches (may not fit)':'All switches'}">${rest.map(p=>o(p.Product_ID,p.Model_Name)).join('')}</optgroup>`;
+}
 function epOpts(sel){ const groups={}; state.endpoints.forEach(e=>(groups[e.Category||'Other']=groups[e.Category||'Other']||[]).push(e));
   return Object.entries(groups).map(([g,es])=>`<optgroup label="${esc(g)}">${es.map(e=>`<option value="${esc(e.Endpoint_ID)}"${e.Endpoint_ID===sel?' selected':''}>${esc(e.Name)}</option>`).join('')}</optgroup>`).join(''); }
 
@@ -96,7 +103,7 @@ function renderInputs(){
       ${P.gateway?`<label class="fld"><span>Router link</span>${sel('gwLink',[['best','Best available in main room'],['10g','10G required']])}</label>`:''}
       <label class="fld"><span>Support contract</span>${supportSel()}</label>
       ${team()?`<label class="fld"><span>Design priority (internal)</span>${sel('priority',[['best','Best design (fewest switches)'],['cost','Lowest cost']])}</label>`:''}
-      ${team()?`<label class="fld"><span>Core model</span><select data-p="coreOverride">${swOpts(P.coreOverride||'Auto')}</select></label>
+      ${team()?`<label class="fld"><span>Core model</span><select data-p="coreOverride">${fitOpts(P.coreOverride||'Auto',(result&&result.coreOptions)||[],'Fits all room links')}</select></label>
       <label class="fld"><span>Separate dual uplinks</span>${sel('dualUplink',[['true','Always 2+ uplinks'],['false','Single uplink allowed']])}</label>`:''}
     </div>`:'';
   $('#advbtn').setAttribute('aria-expanded',advOpen);
@@ -115,10 +122,10 @@ function renderInputs(){
       <div class="lfoot"><button class="ghost add" data-act="adde">Add device</button><span class="mut">${fmt(total)} devices</span></div>
       <label class="fld wide"><span>Connectors</span><select data-lf="conn"><option value=""${L.conn?'':' selected'}>Default (RJ45 and LC fiber)</option><option value="neutrik"${L.conn==='neutrik'?' selected':''}>Neutrik (etherCON)</option></select></label>
       ${L.conn==='neutrik'?`<label class="fld wide"><span>Uplink card (M4350-16M4V)</span><select data-lf="card"><option value=""${L.card?'':' selected'}>APM414V: 4 × SFP28, LC fiber (included)</option><option value="quad"${L.card==='quad'?' selected':''}>opticalCON QUAD (APM414SD multimode / APM414LD single mode)</option></select></label>`:''}
-      ${team()?`<label class="fld wide"><span>Access switch</span><select data-lf="override">${swOpts(L.override||'Auto')}</select></label>`:''}
       ${err?`<p class="err">${esc(err.msg)}</p>`:''}
       ${nodes.length?`<div class="pick">${nodes.map(n=>`<p><b>${n.n} × ${esc(n.model)}</b> <span>${n.up.u?(state.project.dualCore&&result.core?`${n.up.u/2} × ${n.up.speed}G to each core${n.n>1?', per switch':''}`:`${n.up.u} × ${n.up.speed}G uplinks ${n.n>1?'each':''}`):'standalone'}</span></p>
-        ${team()&&n.alts.length>1?`<p class="alts">Also fits: ${n.alts.filter(a=>a.pid!==n.pid).slice(0,3).map(a=>`<button class="chip" data-act="use" data-pid="${esc(a.pid)}">${esc(a.name)} × ${a.n}</button>`).join('')}</p>`:''}`).join('')}</div>`:''}
+`).join('')}</div>`:''}
+      ${team()?`<label class="fld wide"><span>Switch for this room</span><select data-lf="override">${fitOpts(L.override||'Auto',(result&&result.roomOptions&&result.roomOptions[li])||[],'Fits this room')}</select></label>`:''}
     </section>`;}).join('');
   $('#libwrap').hidden=!team();
   $('#lib').innerHTML=team()&&libOpen?`<div class="libt"><div class="lr lh"><span>Device</span><span>Link</span><span>Media</span><span>PoE W</span><span>Mb/s</span><span>Timing</span><span></span></div>
@@ -153,7 +160,6 @@ document.addEventListener('click',ev=>{
     case 'adde': state.locations[li].eps.push({ep:state.endpoints[0].Endpoint_ID,qty:1}); break;
     case 'dele': state.locations[li].eps.splice(+b.closest('.ep').dataset.e,1); break;
     case 'dell': state.locations.splice(li,1); break;
-    case 'use': state.locations[li].override=b.dataset.pid; break;
     case 'addl': { const n=state.locations.filter(l=>l.type==='IDF').length+1; state.locations.push({id:nid(),name:'Closet '+n,type:'IDF',distance:100,media:'MMF',override:'Auto',eps:[{ep:'EP-1G-RX',qty:8}]}); break; }
     case 'adv': advOpen=!advOpen; break;
     case 'lib': libOpen=!libOpen; break;
